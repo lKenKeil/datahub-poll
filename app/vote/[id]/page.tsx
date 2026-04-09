@@ -119,7 +119,22 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         setComments(dbComments);
       } catch (error) {
         console.error('투표 페이지 로딩 실패:', getErrorMessage(error));
-        setPollData(null);
+        if (officialPoll) {
+          const fallbackVotes = statsToVotes(officialPoll.stats, officialPoll.participants);
+          setIsOfficial(true);
+          setPollData({
+            id: dbPollId,
+            title: officialPoll.title,
+            category: officialPoll.category,
+            options: officialPoll.options,
+            votes: fallbackVotes,
+            participants: officialPoll.participants,
+            officialFact: officialPoll.officialFact,
+          });
+          setBarWidths(calcPercentages(fallbackVotes));
+        } else {
+          setPollData(null);
+        }
         setComments([]);
       } finally {
         setLoading(false);
