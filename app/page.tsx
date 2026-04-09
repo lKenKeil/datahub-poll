@@ -40,6 +40,23 @@ function getTrendingScore(poll: DbPoll) {
   return participants + freshnessBoost;
 }
 
+function readLatestValue(stat: OfficialStatistic) {
+  const raw = (stat.metadata as Record<string, unknown> | null | undefined)?.latest_value;
+  return typeof raw === 'number' ? raw : null;
+}
+
+function readLatestYear(stat: OfficialStatistic) {
+  const raw = (stat.metadata as Record<string, unknown> | null | undefined)?.latest_year;
+  return typeof raw === 'string' ? raw : null;
+}
+
+function formatStatValue(stat: OfficialStatistic, value: number) {
+  const indicatorId = (stat.metadata as Record<string, unknown> | null | undefined)?.indicator_id;
+  if (indicatorId === 'SP.POP.TOTL') return `${Math.round(value).toLocaleString()} 명`;
+  if (indicatorId === 'IT.NET.USER.ZS' || indicatorId === 'SL.UEM.1524.ZS') return `${value.toFixed(2)}%`;
+  return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
+}
+
 export default function Home() {
   const [dbPolls, setDbPolls] = useState<DbPoll[]>([]);
   const [officialStats, setOfficialStats] = useState<OfficialStatistic[]>([]);
@@ -47,6 +64,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<'전체' | PollCategory>('전체');
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [openStatId, setOpenStatId] = useState<string | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,6 +75,16 @@ export default function Home() {
       .sort((a, b) => getTrendingScore(b) - getTrendingScore(a))
       .slice(0, 3);
   }, [dbPolls]);
+
+  const filteredOfficialStats = useMemo(() => {
+    const normalizedSearch = searchTerm.toLowerCase().trim();
+    return officialStats.filter((stat) => {
+      const matchCategory = activeCategory === '전체' || stat.category === activeCategory;
+      const haystack = `${stat.title} ${stat.summary ?? ''} ${(stat.tags ?? []).join(' ')}`.toLowerCase();
+      const matchSearch = !normalizedSearch || haystack.includes(normalizedSearch);
+      return matchCategory && matchSearch;
+    });
+  }, [officialStats, activeCategory, searchTerm]);
 
   const fetchPolls = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -306,16 +334,18 @@ export default function Home() {
 
           {statsLoading ? (
             <div className="text-slate-500 text-sm font-bold">공식 통계를 불러오는 중...</div>
-          ) : officialStats.length === 0 ? (
+          ) : filteredOfficialStats.length === 0 ? (
             <div className="text-slate-500 text-sm font-bold">등록된 공식 통계가 없습니다. 마이그레이션/수집 스크립트를 실행해 주세요.</div>
           ) : (
             <div className="grid md:grid-cols-2 gap-5">
-              {officialStats.map((item) => (
-                <a
+              {filteredOfficialStats.map((item) => {
+                const latestValue = readLatestValue(item);
+                const latestYear = readLatestYear(item);
+                const opened = openStatId === item.id;
+
+                return (
+                <article
                   key={item.id}
-                  href={item.source_url}
-                  target="_blank"
-                  rel="noreferrer"
                   className="group p-6 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-cyan-500/50 transition-all"
                 >
                   <div className="space-y-3">
@@ -330,14 +360,63 @@ export default function Home() {
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-snug group-hover:text-cyan-400">
                       {item.title}
                     </h3>
+                    {latestValue !== null ? (
+                      <div className="inline-flex items-end gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-3 py-2">
+                        <span className="text-cyan-600 dark:text-cyan-300 text-xl font-black">
+                          {formatStatValue(item, latestValue)}
+                        </span>
+                        <span className="text-[11px] text-cyan-700/80 dark:text-cyan-200/80 font-bold">
+                          {latestYear ? `(${latestYear})` : ''}
+                        </span>
+                      </div>
+                    ) : null}
                     {item.summary ? (
                       <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                         {item.summary}
                       </p>
                     ) : null}
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setOpenStatId(opened ? null : item.id)}
+                        className="px-3 py-1.5 text-xs rounded-full border border-slate-300 dark:border-white/20 hover:border-cyan-500/50"
+                      >
+                        {opened ? '접기' : '인사이트 보기'}
+                      </button>
+                      <a
+                        href={item.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 text-xs rounded-full bg-cyan-600 text-white hover:bg-cyan-500"
+                      >
+                        원문 출처
+                      </a>
+                    </div>
+                    {opened ? (
+                      <div className="mt-3 rounded-2xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/[0.03] p-4 space-y-2">
+                        {item.methodology ? (
+                          <p className="text-xs text-slate-700 dark:text-slate-300"><span className="font-black">방법론:</span> {item.methodology}</p>
+                        ) : null}
+                        {item.sample_size ? (
+                          <p className="text-xs text-slate-700 dark:text-slate-300"><span className="font-black">표본수:</span> {item.sample_size.toLocaleString()}</p>
+                        ) : null}
+                        {item.confidence_note ? (
+                          <p className="text-xs text-slate-700 dark:text-slate-300"><span className="font-black">신뢰 참고:</span> {item.confidence_note}</p>
+                        ) : null}
+                        {(item.tags ?? []).length > 0 ? (
+                          <div className="flex flex-wrap gap-1 pt-1">
+                            {(item.tags ?? []).map((tag) => (
+                              <span key={`${item.id}_${tag}`} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-700 dark:text-slate-300">
+                                #{tag}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                </a>
-              ))}
+                </article>
+              )})}
             </div>
           )}
         </section>
