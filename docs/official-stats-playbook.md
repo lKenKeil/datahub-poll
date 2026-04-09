@@ -24,3 +24,22 @@
 ## 5) Update cadence
 - Nightly sync for fast-changing sources.
 - Weekly sync for static/public annual datasets.
+
+## 6) Automated sync (implemented)
+- Script: `scripts/sync-official-stats.mjs`
+- Command:
+  - `NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run sync:official-stats`
+- Current auto-collected indicators:
+  - World Bank `SP.POP.TOTL` (KOR total population)
+  - World Bank `IT.NET.USER.ZS` (internet users %)
+  - World Bank `SL.UEM.1524.ZS` (youth unemployment %)
+
+## 7) Recommended institution queue (KR first)
+- KOSIS table-level links (official Korean statistics)
+- Statistics Korea press releases with publication date and sample notes
+- OECD Korea deep links per indicator
+- Add each record with:
+  - `source_url`
+  - `observed_at`
+  - `published_at`
+  - `methodology` or `confidence_note`

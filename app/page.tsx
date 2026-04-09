@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { POLLS } from '../data/polls';
-import { DbPoll, PollCategory } from '../lib/types';
+import { DbPoll, OfficialStatistic, PollCategory } from '../lib/types';
 import { supabase } from '../lib/supabase';
 
 const categories: Array<'전체' | PollCategory> = [
@@ -42,10 +42,13 @@ function getTrendingScore(poll: DbPoll) {
 
 export default function Home() {
   const [dbPolls, setDbPolls] = useState<DbPoll[]>([]);
+  const [officialStats, setOfficialStats] = useState<OfficialStatistic[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<'전체' | PollCategory>('전체');
   const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const officialIdSet = useMemo(() => new Set(POLLS.map((poll) => poll.id)), []);
 
@@ -79,9 +82,33 @@ export default function Home() {
     }
   }, [officialIdSet]);
 
+  const fetchOfficialStats = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setStatsLoading(true);
+
+    try {
+      const response = await fetch('/api/official-statistics', { cache: 'no-store' });
+      const json = (await response.json()) as { data?: OfficialStatistic[]; error?: string };
+
+      if (!response.ok) {
+        console.error('공식 통계 로딩 실패:', json.error ?? 'unknown error');
+        if (!silent) setOfficialStats([]);
+        return;
+      }
+
+      setOfficialStats(json.data ?? []);
+    } finally {
+      if (!silent) setStatsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     void fetchPolls();
   }, [fetchPolls]);
+
+  useEffect(() => {
+    void fetchOfficialStats();
+  }, [fetchOfficialStats]);
 
   useEffect(() => {
     const scheduleRefresh = () => {
@@ -106,6 +133,30 @@ export default function Home() {
       void supabase.removeChannel(channel);
     };
   }, [fetchPolls]);
+
+  useEffect(() => {
+    const scheduleRefresh = () => {
+      if (statsRefreshTimerRef.current) clearTimeout(statsRefreshTimerRef.current);
+      statsRefreshTimerRef.current = setTimeout(() => {
+        void fetchOfficialStats({ silent: true });
+      }, 350);
+    };
+
+    const channel = supabase
+      .channel('home-official-stats-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'official_statistics' }, scheduleRefresh)
+      .subscribe();
+
+    const interval = setInterval(() => {
+      void fetchOfficialStats({ silent: true });
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      if (statsRefreshTimerRef.current) clearTimeout(statsRefreshTimerRef.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [fetchOfficialStats]);
 
   const filterFn = (poll: { title: string; category?: string }) => {
     const normalizedTitle = poll.title?.toLowerCase() ?? '';
@@ -245,6 +296,50 @@ export default function Home() {
               );
             })}
           </div>
+        </section>
+
+        <section className="space-y-8">
+          <div className="flex items-center gap-4">
+            <span className="text-cyan-500 font-black tracking-widest text-xs">OFFICIAL INTEL FEED</span>
+            <div className="h-px flex-1 bg-cyan-500/20"></div>
+          </div>
+
+          {statsLoading ? (
+            <div className="text-slate-500 text-sm font-bold">공식 통계를 불러오는 중...</div>
+          ) : officialStats.length === 0 ? (
+            <div className="text-slate-500 text-sm font-bold">등록된 공식 통계가 없습니다. 마이그레이션/수집 스크립트를 실행해 주세요.</div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-5">
+              {officialStats.map((item) => (
+                <a
+                  key={item.id}
+                  href={item.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group p-6 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-cyan-500/50 transition-all"
+                >
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-400 font-black uppercase">
+                        {item.category}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {item.published_at ?? item.observed_at ?? 'date n/a'}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-snug group-hover:text-cyan-400">
+                      {item.title}
+                    </h3>
+                    {item.summary ? (
+                      <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                        {item.summary}
+                      </p>
+                    ) : null}
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="space-y-8">

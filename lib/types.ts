@@ -24,7 +24,27 @@ export type DbPoll = {
   options: string[];
   votes: PollOptionVotes;
   participants: number;
+  official_fact?: string;
   created_at?: string;
+};
+
+export type OfficialStatistic = {
+  id: string;
+  source_id: string;
+  category: string;
+  title: string;
+  summary?: string | null;
+  source_url: string;
+  methodology?: string | null;
+  sample_size?: number | null;
+  observed_at?: string | null;
+  published_at?: string | null;
+  confidence_note?: string | null;
+  tags?: string[] | null;
+  metadata?: Record<string, unknown> | null;
+  is_verified?: boolean;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type CommentRow = {

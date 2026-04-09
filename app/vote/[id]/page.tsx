@@ -450,7 +450,21 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               {syncState === 'live' ? 'LIVE' : syncState === 'syncing' ? 'SYNCING' : 'RECONNECTING'}
             </span>
           </div>
-          {pollData.officialFact ? <p className="text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">{pollData.officialFact}</p> : null}
+          {pollData.officialFact ? (
+            <div className="max-w-2xl mx-auto text-left bg-blue-500/10 dark:bg-blue-500/10 border border-blue-400/30 rounded-2xl px-5 py-4 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/25 text-blue-200 text-[11px] font-black">
+                  i
+                </span>
+                <span className="text-[11px] font-black tracking-widest text-blue-300 uppercase">
+                  Official Fact
+                </span>
+              </div>
+              <p className="text-[15px] leading-relaxed text-slate-700 dark:text-slate-100 font-semibold break-keep">
+                {pollData.officialFact}
+              </p>
+            </div>
+          ) : null}
         </header>
 
         <section className="relative">
