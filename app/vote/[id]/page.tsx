@@ -18,6 +18,11 @@ type ViewPoll = {
   officialFact?: string;
 };
 
+type DbPollWithOfficialFact = DbPoll & {
+  official_fact?: string;
+  officialFact?: string;
+};
+
 type IncrementVoteResponse = {
   id: string;
   votes: number[];
@@ -102,7 +107,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
       if (!response.ok) throw new Error(json.error ?? '투표 데이터 로딩 실패');
 
-      const dbPoll = json.poll;
+      const dbPoll = json.poll as DbPollWithOfficialFact | null;
       const dbComments = (json.comments ?? []).map((comment) => ({
         ...comment,
         parent_id: comment.parent_id ?? null,
@@ -161,6 +166,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           options: dbPoll.options,
           votes: safeVotes,
           participants: dbPoll.participants || 0,
+          officialFact: dbPoll.officialFact ?? dbPoll.official_fact,
         });
         setBarWidths(calcPercentages(safeVotes));
       } else if (!silent) {
@@ -444,7 +450,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               {syncState === 'live' ? 'LIVE' : syncState === 'syncing' ? 'SYNCING' : 'RECONNECTING'}
             </span>
           </div>
-          {isOfficial && pollData.officialFact ? <p className="text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">{pollData.officialFact}</p> : null}
+          {pollData.officialFact ? <p className="text-slate-400 text-sm max-w-2xl mx-auto leading-relaxed">{pollData.officialFact}</p> : null}
         </header>
 
         <section className="relative">
