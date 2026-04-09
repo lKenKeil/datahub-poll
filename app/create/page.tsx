@@ -54,35 +54,35 @@ export default function CreatePollPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-100 p-6">
       <div className="max-w-2xl mx-auto mt-10 space-y-8">
         <Link
           href="/"
-          className="inline-block px-6 py-3 bg-white border border-gray-200 rounded-full text-blue-600 font-bold hover:bg-blue-50 transition-colors"
+          className="inline-block px-6 py-3 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-full text-blue-600 dark:text-blue-300 font-bold hover:bg-blue-50 dark:hover:bg-white/10 transition-colors"
         >
           ← 취소하고 돌아가기
         </Link>
 
-        <h2 className="text-4xl font-black italic text-slate-900">새로운 난제 등록 ✍️</h2>
+        <h2 className="text-4xl font-black italic text-slate-900 dark:text-white">새로운 난제 등록 ✍️</h2>
 
-        <form onSubmit={handleSubmit} className="bg-white p-10 rounded-[3rem] shadow-xl border border-slate-100 space-y-8">
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-white/[0.03] p-10 rounded-[3rem] shadow-xl border border-slate-100 dark:border-white/10 space-y-8">
           <div>
-            <label className="block text-xl font-bold text-slate-700 mb-3">투표 주제 (예: 짜장면 vs 짬뽕)</label>
+            <label className="block text-xl font-bold text-slate-700 dark:text-slate-300 mb-3">투표 주제 (예: 짜장면 vs 짬뽕)</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 outline-none text-lg font-bold"
+              className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-white/5 border-2 border-slate-200 dark:border-white/10 focus:border-blue-500 outline-none text-lg font-bold"
               placeholder="세상에서 가장 어려운 질문을 던져보세요"
             />
           </div>
 
           <div>
-            <label className="block text-lg font-bold text-slate-700 mb-3">카테고리</label>
+            <label className="block text-lg font-bold text-slate-700 dark:text-slate-300 mb-3">카테고리</label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value as PollCategory)}
-              className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 outline-none text-lg font-bold"
+              className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-white/5 border-2 border-slate-200 dark:border-white/10 focus:border-blue-500 outline-none text-lg font-bold"
             >
               {categories.map((item) => (
                 <option key={item} value={item}>
@@ -94,33 +94,33 @@ export default function CreatePollPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-lg font-bold text-slate-700 mb-3">선택지 1</label>
+              <label className="block text-lg font-bold text-slate-700 dark:text-slate-300 mb-3">선택지 1</label>
               <input
                 type="text"
                 value={opt1}
                 onChange={(e) => setOpt1(e.target.value)}
-                className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 outline-none text-lg font-bold"
+                className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-white/5 border-2 border-slate-200 dark:border-white/10 focus:border-blue-500 outline-none text-lg font-bold"
                 placeholder="첫 번째 선택"
               />
             </div>
             <div>
-              <label className="block text-lg font-bold text-slate-700 mb-3">선택지 2</label>
+              <label className="block text-lg font-bold text-slate-700 dark:text-slate-300 mb-3">선택지 2</label>
               <input
                 type="text"
                 value={opt2}
                 onChange={(e) => setOpt2(e.target.value)}
-                className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 outline-none text-lg font-bold"
+                className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-white/5 border-2 border-slate-200 dark:border-white/10 focus:border-blue-500 outline-none text-lg font-bold"
                 placeholder="두 번째 선택"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xl font-bold text-slate-700 mb-3">오피셜 팩트 (선택사항)</label>
+            <label className="block text-xl font-bold text-slate-700 dark:text-slate-300 mb-3">오피셜 팩트 (선택사항)</label>
             <textarea
               value={fact}
               onChange={(e) => setFact(e.target.value)}
-              className="w-full p-5 rounded-2xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 outline-none text-lg font-medium h-32 resize-none"
+              className="w-full p-5 rounded-2xl bg-slate-50 dark:bg-white/5 border-2 border-slate-200 dark:border-white/10 focus:border-blue-500 outline-none text-lg font-medium h-32 resize-none"
               placeholder="이 투표와 관련된 재미있는 통계나 사실을 적어주세요!"
             />
           </div>

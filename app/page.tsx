@@ -84,17 +84,17 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] text-slate-200 font-sans selection:bg-blue-500/30">
-      <nav className="sticky top-0 z-50 bg-[#020617]/80 backdrop-blur-xl border-b border-white/5">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 font-sans selection:bg-blue-500/30">
+      <nav className="sticky top-0 z-50 bg-white/80 dark:bg-[#020617]/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5">
         <div className="max-w-7xl mx-auto px-8 py-4 flex justify-between items-center">
-          <Link href="/" className="text-2xl font-black tracking-tighter flex items-center gap-2">
+          <Link href="/" className="text-2xl font-black tracking-tighter flex items-center gap-2 text-slate-900 dark:text-white">
             <span className="bg-blue-600 px-2 py-0.5 rounded text-white">DATA</span>
-            <span className="text-white">HUB.</span>
+            <span className="text-slate-900 dark:text-white">HUB.</span>
           </Link>
           <div className="flex items-center gap-6">
             <Link
               href="/create"
-              className="px-5 py-2 bg-white text-black text-sm font-bold rounded-full hover:bg-blue-500 hover:text-white transition-all"
+              className="px-5 py-2 bg-slate-900 text-white dark:bg-white dark:text-black text-sm font-bold rounded-full hover:bg-blue-500 hover:text-white transition-all"
             >
               + 새 데이터 등록
             </Link>
@@ -105,14 +105,14 @@ export default function Home() {
       <main className="max-w-7xl mx-auto px-8 py-16 space-y-24">
         <section className="space-y-10 text-center">
           <div className="space-y-6">
-            <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.1] text-white">
+            <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-[1.1] text-slate-900 dark:text-white">
               세상의 모든 기준을
               <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-indigo-400 to-emerald-400">
                 데이터로 아카이빙하다
               </span>
             </h1>
-            <p className="text-slate-400 text-xl font-medium max-w-3xl mx-auto break-keep">
+            <p className="text-slate-600 dark:text-slate-400 text-xl font-medium max-w-3xl mx-auto break-keep">
               학술적 가치가 있는 공공 통계부터 뜨거운 커뮤니티 이슈까지,
               <br />
               객관적인 수치로 증명된 실시간 데이터 통합 플랫폼입니다.
@@ -125,7 +125,7 @@ export default function Home() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-8 py-6 bg-white/5 border border-white/10 rounded-3xl text-xl font-bold placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-2xl"
+                className="w-full px-8 py-6 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-3xl text-xl font-bold placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-2xl"
                 placeholder="관심 있는 통계나 이슈를 검색하세요..."
               />
             </div>
@@ -137,7 +137,7 @@ export default function Home() {
                   className={`px-6 py-2 rounded-full text-xs font-black tracking-wider uppercase transition-all ${
                     activeCategory === cat
                       ? 'bg-blue-600 text-white'
-                      : 'bg-white/5 text-slate-500 border border-white/5 hover:bg-white/10'
+                      : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200 dark:bg-white/5 dark:border-white/5 dark:hover:bg-white/10'
                   }`}
                 >
                   {cat}
@@ -172,8 +172,8 @@ export default function Home() {
                         <span className="text-[11px] text-fuchsia-300 font-black">#{index + 1} HOT</span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${reliability.style}`}>{reliability.label}</span>
                       </div>
-                      <h3 className="text-lg font-bold text-white leading-snug group-hover:text-fuchsia-200">{poll.title}</h3>
-                      <div className="text-xs text-slate-300 flex justify-between">
+                      <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-snug group-hover:text-fuchsia-500 dark:group-hover:text-fuchsia-200">{poll.title}</h3>
+                      <div className="text-xs text-slate-600 dark:text-slate-300 flex justify-between">
                         <span>{poll.category}</span>
                         <span>N={poll.participants.toLocaleString()}</span>
                       </div>
@@ -197,18 +197,18 @@ export default function Home() {
                 <Link
                   href={`/vote/${p.id}`}
                   key={p.id}
-                  className="group flex bg-gradient-to-br from-slate-900 to-[#020617] border border-blue-500/20 p-8 rounded-[2rem] hover:border-blue-500 transition-all"
+                  className="group flex bg-gradient-to-br from-white to-slate-100 dark:from-slate-900 dark:to-[#020617] border border-blue-500/20 p-8 rounded-[2rem] hover:border-blue-500 transition-all"
                 >
                   <div className="flex-1 space-y-4">
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-[10px] font-black rounded">VERIFIED</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${reliability.style}`}>{reliability.label}</span>
                     </div>
-                    <h3 className="text-2xl font-bold text-white group-hover:text-blue-400 transition-colors">{p.title}</h3>
-                    <p className="text-slate-500 text-sm">신뢰할 수 있는 소스로부터 수집된 공인 데이터입니다.</p>
+                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">{p.title}</h3>
+                    <p className="text-slate-600 dark:text-slate-500 text-sm">신뢰할 수 있는 소스로부터 수집된 공인 데이터입니다.</p>
                   </div>
                   <div className="flex flex-col justify-end text-right">
-                    <span className="text-2xl font-black text-white">N={p.participants.toLocaleString()}</span>
+                    <span className="text-2xl font-black text-slate-900 dark:text-white">N={p.participants.toLocaleString()}</span>
                   </div>
                 </Link>
               );
@@ -232,7 +232,7 @@ export default function Home() {
                   <Link
                     href={`/vote/${v.id}`}
                     key={v.id}
-                    className="group p-8 bg-white/5 border border-white/10 rounded-[2rem] hover:bg-white/[0.07] transition-all"
+                    className="group p-8 bg-white border border-slate-200 dark:bg-white/5 dark:border-white/10 rounded-[2rem] hover:bg-slate-100 dark:hover:bg-white/[0.07] transition-all"
                   >
                     <div className="space-y-6">
                       <div className="flex justify-between items-start gap-2">
@@ -241,8 +241,8 @@ export default function Home() {
                         </span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${reliability.style}`}>{reliability.label}</span>
                       </div>
-                      <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors leading-snug">{v.title}</h3>
-                      <div className="pt-6 border-t border-white/5 flex justify-between items-center text-slate-500">
+                      <h3 className="text-xl font-bold text-slate-900 dark:text-white group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors leading-snug">{v.title}</h3>
+                      <div className="pt-6 border-t border-slate-200 dark:border-white/5 flex justify-between items-center text-slate-500">
                         <span className="text-xs font-bold">Samples: {v.participants}</span>
                         <span className="text-xl group-hover:translate-x-1 transition-transform">→</span>
                       </div>

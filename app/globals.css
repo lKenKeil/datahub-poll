@@ -5,4 +5,13 @@ body {
   color: #0f172a;
   margin: 0;
   padding: 0;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
 }
