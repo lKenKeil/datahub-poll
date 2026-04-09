@@ -1,9 +1,10 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { POLLS } from '../data/polls';
 import { DbPoll, PollCategory } from '../lib/types';
+import { supabase } from '../lib/supabase';
 
 const categories: Array<'전체' | PollCategory> = [
   '전체',
@@ -44,6 +45,7 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<'전체' | PollCategory>('전체');
   const [loading, setLoading] = useState(true);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const officialIdSet = useMemo(() => new Set(POLLS.map((poll) => poll.id)), []);
 
@@ -53,15 +55,17 @@ export default function Home() {
       .slice(0, 3);
   }, [dbPolls]);
 
-  useEffect(() => {
-    async function fetchPolls() {
+  const fetchPolls = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setLoading(true);
+
+    try {
       const response = await fetch('/api/polls', { cache: 'no-store' });
       const json = (await response.json()) as { data?: DbPoll[]; error?: string };
 
       if (!response.ok) {
         console.error('데이터 로딩 실패:', json.error ?? 'unknown error');
-        setDbPolls([]);
-        setLoading(false);
+        if (!silent) setDbPolls([]);
         return;
       }
 
@@ -70,11 +74,38 @@ export default function Home() {
       });
 
       setDbPolls(rows);
-      setLoading(false);
+    } finally {
+      if (!silent) setLoading(false);
     }
-
-    fetchPolls();
   }, [officialIdSet]);
+
+  useEffect(() => {
+    void fetchPolls();
+  }, [fetchPolls]);
+
+  useEffect(() => {
+    const scheduleRefresh = () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => {
+        void fetchPolls({ silent: true });
+      }, 350);
+    };
+
+    const channel = supabase
+      .channel('home-polls-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'polls' }, scheduleRefresh)
+      .subscribe();
+
+    const interval = setInterval(() => {
+      void fetchPolls({ silent: true });
+    }, 20000);
+
+    return () => {
+      clearInterval(interval);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [fetchPolls]);
 
   const filterFn = (poll: { title: string; category?: string }) => {
     const normalizedTitle = poll.title?.toLowerCase() ?? '';

@@ -94,7 +94,7 @@ export default function CreatePollPage() {
         return;
       }
 
-      router.push(`/vote/${id}`);
+      router.push('/');
       router.refresh();
     } catch {
       setErrorMessage('네트워크 오류로 등록하지 못했습니다. 잠시 후 다시 시도해주세요.');

@@ -70,7 +70,14 @@ export async function POST(request: Request) {
       insertPayload.official_fact = raw.official_fact.trim();
     }
 
-    const { error } = await supabaseServer.from("polls").insert(insertPayload);
+    let { error } = await supabaseServer.from("polls").insert(insertPayload);
+
+    // Backward-compatible path for DBs where `official_fact` column has not been migrated yet.
+    if (error?.message?.includes("official_fact")) {
+      delete insertPayload.official_fact;
+      const retry = await supabaseServer.from("polls").insert(insertPayload);
+      error = retry.error;
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
