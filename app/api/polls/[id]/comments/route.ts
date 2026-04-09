@@ -13,35 +13,40 @@ type CommentBody = {
 };
 
 export async function POST(request: Request, context: Context) {
-  const { id } = await context.params;
-  const body = (await request.json()) as CommentBody;
+  try {
+    const { id } = await context.params;
+    const body = (await request.json()) as CommentBody;
 
-  const { error: ensurePollError } = await supabaseServer.from("polls").upsert({
-    id,
-    title: body.title,
-    category: body.category,
-    options: body.options,
-    votes: body.votes,
-    participants: body.participants,
-  });
+    const { error: ensurePollError } = await supabaseServer.from("polls").upsert({
+      id,
+      title: body.title,
+      category: body.category,
+      options: body.options,
+      votes: body.votes,
+      participants: body.participants,
+    });
 
-  if (ensurePollError) {
-    return NextResponse.json({ error: ensurePollError.message }, { status: 500 });
+    if (ensurePollError) {
+      return NextResponse.json({ error: ensurePollError.message }, { status: 500 });
+    }
+
+    const { data, error } = await supabaseServer
+      .from("comments")
+      .insert({
+        poll_id: id,
+        text: body.text,
+        user_name: "익명 유저",
+      })
+      .select("*")
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: `comments API failed: ${message}` }, { status: 500 });
   }
-
-  const { data, error } = await supabaseServer
-    .from("comments")
-    .insert({
-      poll_id: id,
-      text: body.text,
-      user_name: "익명 유저",
-    })
-    .select("*")
-    .single();
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ data });
 }
