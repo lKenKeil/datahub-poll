@@ -173,7 +173,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       .channel(`poll-live-${dbPollId}`)
       .on(
         'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'polls', filter: `id=eq.${dbPollId}` },
+        { event: '*', schema: 'public', table: 'polls', filter: `id=eq.${dbPollId}` },
         (payload) => {
           const row = payload.new as DbPoll;
           if (!row?.votes) return;
@@ -188,9 +188,21 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           void fetchAllData();
         },
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'comment_reactions' },
+        () => {
+          void fetchAllData();
+        },
+      )
       .subscribe();
 
+    const interval = setInterval(() => {
+      void fetchAllData();
+    }, 10000);
+
     return () => {
+      clearInterval(interval);
       void supabase.removeChannel(channel);
     };
   }, [dbPollId, fetchAllData]);
