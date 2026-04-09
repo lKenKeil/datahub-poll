@@ -85,8 +85,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     setUserFingerprint(getOrCreateFingerprint());
   }, []);
 
-  const fetchAllData = useCallback(async () => {
-    setLoading(true);
+  const fetchAllData = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false;
+    if (!silent) setLoading(true);
 
     try {
       const response = await fetch(`/api/polls/${dbPollId}`, {
@@ -133,7 +134,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           participants: dbPoll.participants || 0,
         });
         setBarWidths(calcPercentages(safeVotes));
-      } else {
+      } else if (!silent) {
         setPollData(null);
       }
 
@@ -153,12 +154,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           officialFact: officialPoll.officialFact,
         });
         setBarWidths(calcPercentages(fallbackVotes));
-      } else {
+      } else if (!silent) {
         setPollData(null);
       }
-      setComments([]);
+      if (!silent) {
+        setComments([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [dbPollId, officialPoll, userFingerprint]);
 
@@ -185,20 +188,20 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         'postgres_changes',
         { event: '*', schema: 'public', table: 'comments', filter: `poll_id=eq.${dbPollId}` },
         () => {
-          void fetchAllData();
+          void fetchAllData({ silent: true });
         },
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'comment_reactions' },
         () => {
-          void fetchAllData();
+          void fetchAllData({ silent: true });
         },
       )
       .subscribe();
 
     const interval = setInterval(() => {
-      void fetchAllData();
+      void fetchAllData({ silent: true });
     }, 10000);
 
     return () => {
