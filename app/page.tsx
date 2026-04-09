@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { POLLS } from '../data/polls';
 import { DbPoll, OfficialStatistic, PollCategory } from '../lib/types';
 import { supabase } from '../lib/supabase';
@@ -54,10 +55,16 @@ function formatStatValue(stat: OfficialStatistic, value: number) {
   const indicatorId = (stat.metadata as Record<string, unknown> | null | undefined)?.indicator_id;
   if (indicatorId === 'SP.POP.TOTL') return `${Math.round(value).toLocaleString()} 명`;
   if (indicatorId === 'IT.NET.USER.ZS' || indicatorId === 'SL.UEM.1524.ZS') return `${value.toFixed(2)}%`;
+  if (indicatorId === 'IT.CEL.SETS.P2' || indicatorId === 'IT.NET.BBND.P2') return `${value.toFixed(2)} / 100명`;
   return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
 }
 
+function calcRevenue(pv: number, eRPM: number) {
+  return (Math.max(0, pv) / 1000) * Math.max(0, eRPM);
+}
+
 export default function Home() {
+  const router = useRouter();
   const [dbPolls, setDbPolls] = useState<DbPoll[]>([]);
   const [officialStats, setOfficialStats] = useState<OfficialStatistic[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,6 +72,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [openStatId, setOpenStatId] = useState<string | null>(null);
+  const [creatingStatId, setCreatingStatId] = useState<string | null>(null);
+  const [monthlyPageViews, setMonthlyPageViews] = useState(300000);
+  const [estimatedErpm, setEstimatedErpm] = useState(1.8);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -85,6 +95,21 @@ export default function Home() {
       return matchCategory && matchSearch;
     });
   }, [officialStats, activeCategory, searchTerm]);
+
+  const itTechStats = useMemo(() => {
+    return officialStats.filter((stat) => stat.category === 'IT/테크');
+  }, [officialStats]);
+
+  const estimatedMonthlyRevenue = useMemo(() => {
+    return calcRevenue(monthlyPageViews, estimatedErpm);
+  }, [monthlyPageViews, estimatedErpm]);
+
+  const estimatedMonthlyInfraCost = useMemo(() => {
+    if (monthlyPageViews <= 100000) return 25;
+    if (monthlyPageViews <= 500000) return 60;
+    if (monthlyPageViews <= 2000000) return 180;
+    return 450;
+  }, [monthlyPageViews]);
 
   const fetchPolls = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false;
@@ -191,6 +216,36 @@ export default function Home() {
     const matchSearch = normalizedTitle.includes(searchTerm.toLowerCase());
     const matchCategory = activeCategory === '전체' || poll.category === activeCategory;
     return matchSearch && matchCategory;
+  };
+
+  const createPollFromStat = async (stat: OfficialStatistic) => {
+    setCreatingStatId(stat.id);
+    try {
+      const stamp = Date.now();
+      const response = await fetch('/api/polls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: `custom_stat_${stat.id}_${stamp}`,
+          title: `📊 ${stat.title} 어떻게 보시나요?`,
+          category: stat.category || 'IT/테크',
+          options: ['상승/개선 추세다', '정체/악화 추세다'],
+          votes: [0, 0],
+          participants: 0,
+          official_fact: stat.summary ?? '',
+        }),
+      });
+      const json = (await response.json()) as { data?: { id: string }; error?: string };
+      if (!response.ok || !json.data?.id) throw new Error(json.error ?? '논제 생성 실패');
+
+      await fetchPolls({ silent: true });
+      router.push(`/vote/${json.data.id}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      alert(`논제 생성 실패: ${message}`);
+    } finally {
+      setCreatingStatId(null);
+    }
   };
 
   return (
@@ -383,6 +438,14 @@ export default function Home() {
                       >
                         {opened ? '접기' : '인사이트 보기'}
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => void createPollFromStat(item)}
+                        disabled={creatingStatId === item.id}
+                        className="px-3 py-1.5 text-xs rounded-full bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-60"
+                      >
+                        {creatingStatId === item.id ? '생성 중...' : '이 통계로 투표 만들기'}
+                      </button>
                       <a
                         href={item.source_url}
                         target="_blank"
@@ -419,6 +482,89 @@ export default function Home() {
               )})}
             </div>
           )}
+        </section>
+
+        <section className="space-y-8">
+          <div className="flex items-center gap-4">
+            <span className="text-indigo-500 font-black tracking-widest text-xs">IT/TECH SNAPSHOT</span>
+            <div className="h-px flex-1 bg-indigo-500/20"></div>
+          </div>
+          {itTechStats.length === 0 ? (
+            <div className="text-slate-500 text-sm font-bold">IT/테크 통계를 수집하면 여기에 핵심 지표가 자동으로 정리됩니다.</div>
+          ) : (
+            <div className="grid md:grid-cols-3 gap-5">
+              {itTechStats.slice(0, 3).map((item) => {
+                const latestValue = readLatestValue(item);
+                return (
+                  <div
+                    key={`it_snapshot_${item.id}`}
+                    className="rounded-3xl border border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 to-transparent p-6"
+                  >
+                    <div className="space-y-3">
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-indigo-500/20 text-indigo-300 font-black uppercase">IT/테크</span>
+                      <h3 className="text-base font-bold leading-snug text-slate-900 dark:text-white">{item.title}</h3>
+                      <p className="text-2xl font-black text-indigo-600 dark:text-indigo-300">
+                        {latestValue !== null ? formatStatValue(item, latestValue) : 'N/A'}
+                      </p>
+                      <p className="text-xs text-slate-500">{readLatestYear(item) ? `${readLatestYear(item)} 기준` : '최근값 기준연도 없음'}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-8">
+          <div className="flex items-center gap-4">
+            <span className="text-amber-500 font-black tracking-widest text-xs">CREATOR MONETIZATION ESTIMATOR</span>
+            <div className="h-px flex-1 bg-amber-500/20"></div>
+          </div>
+          <div className="rounded-3xl border border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-transparent p-8 space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              <label className="space-y-2 block">
+                <span className="text-xs font-black text-slate-600 dark:text-slate-300">월 페이지뷰 (PV)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  value={monthlyPageViews}
+                  onChange={(e) => setMonthlyPageViews(Number(e.target.value) || 0)}
+                  className="w-full px-4 py-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 font-bold"
+                />
+              </label>
+              <label className="space-y-2 block">
+                <span className="text-xs font-black text-slate-600 dark:text-slate-300">예상 eRPM (USD)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={estimatedErpm}
+                  onChange={(e) => setEstimatedErpm(Number(e.target.value) || 0)}
+                  className="w-full px-4 py-3 rounded-2xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 font-bold"
+                />
+              </label>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 p-4 bg-white/70 dark:bg-white/[0.03]">
+                <p className="text-xs text-slate-500">예상 월 매출</p>
+                <p className="text-2xl font-black text-emerald-600 dark:text-emerald-300">${estimatedMonthlyRevenue.toFixed(0)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 p-4 bg-white/70 dark:bg-white/[0.03]">
+                <p className="text-xs text-slate-500">예상 월 인프라비</p>
+                <p className="text-2xl font-black text-rose-600 dark:text-rose-300">${estimatedMonthlyInfraCost.toFixed(0)}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 dark:border-white/10 p-4 bg-white/70 dark:bg-white/[0.03]">
+                <p className="text-xs text-slate-500">예상 월 잔여</p>
+                <p className="text-2xl font-black text-blue-600 dark:text-blue-300">
+                  ${(estimatedMonthlyRevenue - estimatedMonthlyInfraCost).toFixed(0)}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              계산식: (PV/1000) × eRPM. 실제 매출/비용은 체류시간, 국가 비중, 광고 배치, API 호출량에 따라 달라집니다.
+            </p>
+          </div>
         </section>
 
         <section className="space-y-8">
