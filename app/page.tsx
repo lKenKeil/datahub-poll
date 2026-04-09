@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { POLLS } from '../data/polls';
-import { supabase } from '../lib/supabase';
 import { DbPoll, PollCategory } from '../lib/types';
 
 const categories: Array<'전체' | PollCategory> = [
@@ -56,16 +55,17 @@ export default function Home() {
 
   useEffect(() => {
     async function fetchPolls() {
-      const { data, error } = await supabase.from('polls').select('*').order('created_at', { ascending: false });
+      const response = await fetch('/api/polls', { cache: 'no-store' });
+      const json = (await response.json()) as { data?: DbPoll[]; error?: string };
 
-      if (error) {
-        console.error('데이터 로딩 실패:', error);
+      if (!response.ok) {
+        console.error('데이터 로딩 실패:', json.error ?? 'unknown error');
         setDbPolls([]);
         setLoading(false);
         return;
       }
 
-      const rows = ((data as DbPoll[] | null) ?? []).filter((poll) => {
+      const rows = (json.data ?? []).filter((poll) => {
         return poll.id.startsWith('custom_') || !officialIdSet.has(poll.id.replace('official_', ''));
       });
 

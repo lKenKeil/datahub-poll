@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 import { PollCategory } from '@/lib/types';
 
 const categories: PollCategory[] = ['학술/통계', 'IT/테크', '사회/경제', '라이프스타일', '커뮤니티'];
@@ -37,12 +36,16 @@ export default function CreatePollPage() {
       official_fact: fact.trim() || null,
     };
 
-    const { error } = await supabase.from('polls').insert(payload);
-
+    const response = await fetch('/api/polls', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = (await response.json()) as { ok?: boolean; error?: string };
     setIsSubmitting(false);
 
-    if (error) {
-      alert(`등록 실패: ${error.message}`);
+    if (!response.ok) {
+      alert(`등록 실패: ${json.error ?? 'unknown error'}`);
       return;
     }
 

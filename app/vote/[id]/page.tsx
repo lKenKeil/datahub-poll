@@ -3,7 +3,6 @@
 import { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { POLLS } from '../../../data/polls';
-import { supabase } from '@/lib/supabase';
 import { CommentRow, DbPoll } from '@/lib/types';
 
 type VotePageParams = { id: string };
@@ -23,6 +22,11 @@ type IncrementVoteResponse = {
   votes: number[];
   participants: number;
 };
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
 
 function statsToVotes(stats: number[], participants: number) {
   return stats.map((ratio) => Math.max(0, Math.round((participants * ratio) / 100)));
@@ -66,70 +70,60 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     const fetchAllData = async () => {
       setLoading(true);
 
-      const { data: dbPoll, error: pollError } = await supabase
-        .from('polls')
-        .select('*')
-        .eq('id', dbPollId)
-        .maybeSingle();
+      try {
+        const response = await fetch(`/api/polls/${dbPollId}`, { cache: 'no-store' });
+        const json = (await response.json()) as { poll?: DbPoll | null; comments?: CommentRow[]; error?: string };
 
-      if (pollError) {
-        console.error('투표 데이터 로딩 실패:', pollError.message);
-      }
+        if (!response.ok) {
+          throw new Error(json.error ?? '투표 데이터 로딩 실패');
+        }
 
-      if (officialPoll) {
-        const defaultVotes = statsToVotes(officialPoll.stats, officialPoll.participants);
-        const typedDbPoll = dbPoll as DbPoll | null;
+        const dbPoll = json.poll;
+        const dbComments = json.comments ?? [];
 
-        const mergedVotes =
-          typedDbPoll?.votes && typedDbPoll.votes.length === officialPoll.options.length
-            ? typedDbPoll.votes
-            : defaultVotes;
+        if (officialPoll) {
+          const defaultVotes = statsToVotes(officialPoll.stats, officialPoll.participants);
+          const mergedVotes =
+            dbPoll?.votes && dbPoll.votes.length === officialPoll.options.length ? dbPoll.votes : defaultVotes;
 
-        const mergedPoll: ViewPoll = {
-          id: dbPollId,
-          title: officialPoll.title,
-          category: officialPoll.category,
-          options: officialPoll.options,
-          votes: mergedVotes,
-          participants: typedDbPoll?.participants ?? officialPoll.participants,
-          officialFact: officialPoll.officialFact,
-        };
+          const mergedPoll: ViewPoll = {
+            id: dbPollId,
+            title: officialPoll.title,
+            category: officialPoll.category,
+            options: officialPoll.options,
+            votes: mergedVotes,
+            participants: dbPoll?.participants ?? officialPoll.participants,
+            officialFact: officialPoll.officialFact,
+          };
 
-        setIsOfficial(true);
-        setPollData(mergedPoll);
-        setBarWidths(calcPercentages(mergedVotes));
-      } else if (dbPoll) {
-        const typedDbPoll = dbPoll as DbPoll;
-        const safeVotes = typedDbPoll.votes ?? typedDbPoll.options.map(() => 0);
+          setIsOfficial(true);
+          setPollData(mergedPoll);
+          setBarWidths(calcPercentages(mergedVotes));
+        } else if (dbPoll) {
+          const safeVotes = dbPoll.votes ?? dbPoll.options.map(() => 0);
 
-        setIsOfficial(false);
-        setPollData({
-          id: typedDbPoll.id,
-          title: typedDbPoll.title,
-          category: typedDbPoll.category || '커뮤니티',
-          options: typedDbPoll.options,
-          votes: safeVotes,
-          participants: typedDbPoll.participants || 0,
-        });
-        setBarWidths(calcPercentages(safeVotes));
-      } else {
+          setIsOfficial(false);
+          setPollData({
+            id: dbPoll.id,
+            title: dbPoll.title,
+            category: dbPoll.category || '커뮤니티',
+            options: dbPoll.options,
+            votes: safeVotes,
+            participants: dbPoll.participants || 0,
+          });
+          setBarWidths(calcPercentages(safeVotes));
+        } else {
+          setPollData(null);
+        }
+
+        setComments(dbComments);
+      } catch (error) {
+        console.error('투표 페이지 로딩 실패:', getErrorMessage(error));
         setPollData(null);
-      }
-
-      const { data: dbComments, error: commentsError } = await supabase
-        .from('comments')
-        .select('*')
-        .eq('poll_id', dbPollId)
-        .order('created_at', { ascending: false });
-
-      if (commentsError) {
-        console.error('댓글 로딩 실패:', commentsError.message);
         setComments([]);
-      } else {
-        setComments((dbComments as CommentRow[] | null) ?? []);
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     };
 
     fetchAllData();
@@ -156,6 +150,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const handleVote = async (idx: number) => {
     if (voted) return;
 
+    const previousPoll = pollData;
     const optimisticVotes = [...pollData.votes];
     optimisticVotes[idx] += 1;
 
@@ -170,88 +165,75 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     setPollData(optimisticPoll);
     setTimeout(() => setBarWidths(calcPercentages(optimisticVotes)), 100);
 
-    const rpcPayload = {
-      p_poll_id: pollData.id,
-      p_option_index: idx,
-      p_title: pollData.title,
-      p_category: pollData.category || '커뮤니티',
-      p_options: pollData.options,
-      p_seed_votes: pollData.votes,
-      p_seed_participants: pollData.participants,
-    };
+    try {
+      const response = await fetch(`/api/polls/${pollData.id}/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          optionIndex: idx,
+          title: pollData.title,
+          category: pollData.category || '커뮤니티',
+          options: pollData.options,
+          votes: pollData.votes,
+          participants: pollData.participants,
+        }),
+      });
 
-    const { data: rpcData, error: rpcError } = await supabase.rpc('increment_poll_vote', rpcPayload);
+      const json = (await response.json()) as {
+        data?: IncrementVoteResponse;
+        error?: string;
+      };
 
-    if (!rpcError && rpcData) {
-      const row = Array.isArray(rpcData)
-        ? (rpcData[0] as IncrementVoteResponse | undefined)
-        : (rpcData as IncrementVoteResponse);
-
-      if (row?.votes) {
-        const synced: ViewPoll = {
-          ...optimisticPoll,
-          votes: row.votes,
-          participants: row.participants ?? optimisticPoll.participants,
-        };
-        setPollData(synced);
-        setBarWidths(calcPercentages(row.votes));
+      if (!response.ok || !json.data) {
+        throw new Error(json.error ?? '투표 반영 실패');
       }
-      return;
+
+      const synced: ViewPoll = {
+        ...optimisticPoll,
+        votes: json.data.votes,
+        participants: json.data.participants,
+      };
+
+      setPollData(synced);
+      setBarWidths(calcPercentages(json.data.votes));
+    } catch (error) {
+      setPollData(previousPoll);
+      setVoted(false);
+      setChoice(null);
+      setBarWidths(calcPercentages(previousPoll.votes));
+      alert(`투표 반영 실패: ${getErrorMessage(error)}`);
     }
-
-    const { error: fallbackError } = await supabase.from('polls').upsert({
-      id: pollData.id,
-      title: pollData.title,
-      category: pollData.category || '커뮤니티',
-      options: pollData.options,
-      votes: optimisticVotes,
-      participants: pollData.participants + 1,
-    });
-
-    if (fallbackError) {
-      alert(`투표 반영 실패: ${fallbackError.message}`);
-      return;
-    }
-
-    console.warn('increment_poll_vote RPC가 없어 fallback upsert로 처리했습니다.');
   };
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
 
-    const { error: ensurePollError } = await supabase.from('polls').upsert({
-      id: pollData.id,
-      title: pollData.title,
-      options: pollData.options,
-      votes: pollData.votes,
-      participants: pollData.participants,
-      category: pollData.category || '커뮤니티',
-    });
+    try {
+      const response = await fetch(`/api/polls/${pollData.id}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: inputText.trim(),
+          title: pollData.title,
+          category: pollData.category || '커뮤니티',
+          options: pollData.options,
+          votes: pollData.votes,
+          participants: pollData.participants,
+        }),
+      });
 
-    if (ensurePollError) {
-      alert(`댓글용 투표 레코드 생성 실패: ${ensurePollError.message}`);
-      return;
+      const json = (await response.json()) as { data?: CommentRow; error?: string };
+
+      if (!response.ok || !json.data) {
+        throw new Error(json.error ?? '댓글 등록 실패');
+      }
+
+      setComments((prev) => [json.data as CommentRow, ...prev]);
+      setInputText('');
+    } catch (error) {
+      alert(`댓글 등록 실패: ${getErrorMessage(error)}`);
     }
-
-    const { data, error } = await supabase
-      .from('comments')
-      .insert({
-        poll_id: pollData.id,
-        text: inputText.trim(),
-        user_name: '익명 유저',
-      })
-      .select()
-      .single();
-
-    if (error) {
-      alert(`댓글 등록 실패: ${error.message}`);
-      return;
-    }
-
-    const newComment = data as CommentRow;
-    setComments((prev) => [newComment, ...prev]);
-    setInputText('');
   };
 
   return (
