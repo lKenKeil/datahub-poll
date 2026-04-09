@@ -1,10 +1,10 @@
-// 전체 투표 데이터를 관리하는 중앙 파일입니다.
-// 나중에 진짜 DB(MySQL, MongoDB 등)가 생기면 이 파일만 교체하면 됩니다.
+import { OfficialPoll } from "../lib/types";
 
-export const POLLS = [
+export const POLLS: OfficialPoll[] = [
   {
     id: "car",
     title: "🚗 아반떼 신차 vs 그랜저 중고",
+    category: "사회/경제",
     options: ["아반떼 신차 (약 2,500만원)", "그랜저 중고 (약 2,500만원)"],
     participants: 1242,
     stats: [42, 58],
@@ -13,6 +13,7 @@ export const POLLS = [
   {
     id: "phone",
     title: "📱 아이폰 vs 갤럭시",
+    category: "IT/테크",
     options: ["아이폰 최신형", "갤럭시 S시리즈"],
     participants: 856,
     stats: [65, 35],
