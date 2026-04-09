@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase-server";
 
-type Context = { params: { id: string } };
+type Context = { params: Promise<{ id: string }> };
 
 type CommentBody = {
   text: string;
@@ -13,7 +13,7 @@ type CommentBody = {
 };
 
 export async function POST(request: Request, context: Context) {
-  const { id } = context.params;
+  const { id } = await context.params;
   const body = (await request.json()) as CommentBody;
 
   const { error: ensurePollError } = await supabaseServer.from("polls").upsert({
