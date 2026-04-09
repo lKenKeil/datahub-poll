@@ -208,12 +208,6 @@ export default function Home() {
           </Link>
           <div className="flex items-center gap-6">
             <Link
-              href="/admin"
-              className="px-4 py-2 border border-slate-300 dark:border-white/15 text-slate-700 dark:text-slate-200 text-sm font-bold rounded-full hover:border-blue-500/60 transition-all"
-            >
-              관리자
-            </Link>
-            <Link
               href="/create"
               className="px-5 py-2 bg-slate-900 text-white dark:bg-white dark:text-black text-sm font-bold rounded-full hover:bg-blue-500 hover:text-white transition-all"
             >
@@ -311,30 +305,36 @@ export default function Home() {
             <span className="text-blue-500 font-black tracking-widest text-xs">OFFICIAL ARCHIVE</span>
             <div className="h-px flex-1 bg-blue-500/20"></div>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-2 gap-6">
-            {POLLS.filter(filterFn).map((p) => {
-              const reliability = getReliability(p.participants);
-              return (
-                <Link
-                  href={`/vote/${p.id}`}
-                  key={p.id}
-                  className="group flex bg-gradient-to-br from-white to-slate-100 dark:from-slate-900 dark:to-[#020617] border border-blue-500/20 p-8 rounded-[2rem] hover:border-blue-500 transition-all"
-                >
-                  <div className="flex-1 space-y-4">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-[10px] font-black rounded">VERIFIED</span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${reliability.style}`}>{reliability.label}</span>
+          {POLLS.filter(filterFn).length === 0 ? (
+            <div className="rounded-3xl border border-slate-200 dark:border-white/10 p-8 text-sm text-slate-500">
+              선택한 조건에 맞는 오피셜 아카이브가 없습니다. 카테고리나 검색어를 바꿔보세요.
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-2 gap-6">
+              {POLLS.filter(filterFn).map((p) => {
+                const reliability = getReliability(p.participants);
+                return (
+                  <Link
+                    href={`/vote/${p.id}`}
+                    key={p.id}
+                    className="group flex bg-gradient-to-br from-white to-slate-100 dark:from-slate-900 dark:to-[#020617] border border-blue-500/20 p-8 rounded-[2rem] hover:border-blue-500 transition-all"
+                  >
+                    <div className="flex-1 space-y-4">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 bg-blue-500/10 text-blue-400 text-[10px] font-black rounded">VERIFIED</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${reliability.style}`}>{reliability.label}</span>
+                      </div>
+                      <h3 className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">{p.title}</h3>
+                      <p className="text-slate-600 dark:text-slate-500 text-sm">신뢰할 수 있는 소스로부터 수집된 공인 데이터입니다.</p>
                     </div>
-                    <h3 className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-blue-500 dark:group-hover:text-blue-400 transition-colors">{p.title}</h3>
-                    <p className="text-slate-600 dark:text-slate-500 text-sm">신뢰할 수 있는 소스로부터 수집된 공인 데이터입니다.</p>
-                  </div>
-                  <div className="flex flex-col justify-end text-right">
-                    <span className="text-2xl font-black text-slate-900 dark:text-white">N={p.participants.toLocaleString()}</span>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+                    <div className="flex flex-col justify-end text-right">
+                      <span className="text-2xl font-black text-slate-900 dark:text-white">N={p.participants.toLocaleString()}</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         <section className="space-y-8">
@@ -477,6 +477,10 @@ export default function Home() {
 
           {loading ? (
             <div className="text-slate-500 text-sm font-bold">커뮤니티 데이터를 불러오는 중...</div>
+          ) : dbPolls.filter(filterFn).length === 0 ? (
+            <div className="rounded-3xl border border-slate-200 dark:border-white/10 p-8 text-sm text-slate-500">
+              조건에 맞는 커뮤니티 논제가 없습니다. <Link href="/create" className="text-blue-500 font-bold">첫 논제를 직접 만들어보세요.</Link>
+            </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {dbPolls.filter(filterFn).map((v) => {
