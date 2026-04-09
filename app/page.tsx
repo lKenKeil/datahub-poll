@@ -232,6 +232,20 @@ export default function Home() {
               <br />
               객관적인 수치로 증명된 실시간 데이터 통합 플랫폼입니다.
             </p>
+            <div className="flex flex-wrap justify-center gap-3 pt-2">
+              <a
+                href="#official-intel-feed"
+                className="px-5 py-2.5 rounded-full bg-cyan-600 text-white text-sm font-black hover:bg-cyan-500 transition-colors"
+              >
+                통계 먼저 보기
+              </a>
+              <a
+                href="#live-discussions"
+                className="px-5 py-2.5 rounded-full border border-slate-300 dark:border-white/15 text-sm font-black hover:border-blue-500/60 transition-colors"
+              >
+                논제 바로 참여
+              </a>
+            </div>
           </div>
 
           <div className="max-w-3xl mx-auto space-y-8">
@@ -262,7 +276,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="space-y-8">
+        <section id="official-intel-feed" className="space-y-8">
           <div className="flex items-center gap-4">
             <span className="text-fuchsia-400 font-black tracking-widest text-xs">TRENDING 24H</span>
             <div className="h-px flex-1 bg-fuchsia-500/20"></div>
@@ -300,7 +314,7 @@ export default function Home() {
           )}
         </section>
 
-        <section className="space-y-8">
+        <section id="live-discussions" className="space-y-8">
           <div className="flex items-center gap-4">
             <span className="text-blue-500 font-black tracking-widest text-xs">OFFICIAL ARCHIVE</span>
             <div className="h-px flex-1 bg-blue-500/20"></div>
