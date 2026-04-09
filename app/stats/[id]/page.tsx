@@ -4,6 +4,7 @@ import { supabaseServer } from "@/lib/supabase-server";
 import { OfficialStatistic } from "@/lib/types";
 
 type Params = { id: string };
+type YearPoint = { year: string; value: number };
 
 function readMetadataNumber(item: OfficialStatistic, key: string) {
   const value = (item.metadata as Record<string, unknown> | null | undefined)?.[key];
@@ -15,12 +16,35 @@ function readMetadataString(item: OfficialStatistic, key: string) {
   return typeof value === "string" ? value : null;
 }
 
+function readSeries(item: OfficialStatistic): YearPoint[] {
+  const raw = (item.metadata as Record<string, unknown> | null | undefined)?.series;
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((point) => {
+      if (!point || typeof point !== "object") return null;
+      const year = String((point as Record<string, unknown>).year ?? "");
+      const value = Number((point as Record<string, unknown>).value);
+      if (!/^\d{4}$/.test(year) || !Number.isFinite(value)) return null;
+      return { year, value };
+    })
+    .filter((point): point is YearPoint => point !== null)
+    .sort((a, b) => Number(a.year) - Number(b.year));
+}
+
 function formatValue(item: OfficialStatistic, value: number) {
   const indicator = readMetadataString(item, "indicator_id");
   if (indicator === "SP.POP.TOTL") return `${Math.round(value).toLocaleString()} 명`;
   if (indicator === "IT.NET.USER.ZS" || indicator === "SL.UEM.1524.ZS") return `${value.toFixed(2)}%`;
   if (indicator === "IT.CEL.SETS.P2" || indicator === "IT.NET.BBND.P2") return `${value.toFixed(2)} / 100명`;
   return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
+}
+
+function formatShortValue(item: OfficialStatistic, value: number) {
+  const indicator = readMetadataString(item, "indicator_id");
+  if (indicator === "SP.POP.TOTL") return `${Math.round(value / 10000).toLocaleString()}만`;
+  if (indicator === "IT.NET.USER.ZS" || indicator === "SL.UEM.1524.ZS") return `${value.toFixed(1)}%`;
+  return value.toFixed(1);
 }
 
 export default async function OfficialStatisticPage({
@@ -47,6 +71,11 @@ export default async function OfficialStatisticPage({
   const item = data as OfficialStatistic;
   const latestValue = readMetadataNumber(item, "latest_value");
   const latestYear = readMetadataString(item, "latest_year");
+  const series = readSeries(item);
+
+  const minValue = series.length > 0 ? Math.min(...series.map((point) => point.value)) : 0;
+  const maxValue = series.length > 0 ? Math.max(...series.map((point) => point.value)) : 0;
+  const valueRange = maxValue - minValue || 1;
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 pb-20">
@@ -85,6 +114,31 @@ export default async function OfficialStatisticPage({
             </div>
           ) : null}
         </section>
+
+        {series.length > 1 ? (
+          <section className="rounded-3xl border border-indigo-500/25 bg-white dark:bg-white/[0.03] p-8 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-black">최근 추세</h2>
+              <span className="text-xs text-slate-500">
+                {series[0].year} ~ {series[series.length - 1].year}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 md:grid-cols-8 gap-3 items-end h-52">
+              {series.map((point) => {
+                const normalizedHeight = ((point.value - minValue) / valueRange) * 100;
+                const height = Math.max(8, Math.round(normalizedHeight));
+
+                return (
+                  <div key={`${item.id}_${point.year}`} className="flex flex-col items-center gap-2">
+                    <div className="text-[10px] text-slate-500 font-bold">{formatShortValue(item, point.value)}</div>
+                    <div className="w-full max-w-[34px] rounded-t-lg bg-gradient-to-t from-indigo-600 to-cyan-500" style={{ height: `${height}%` }} />
+                    <div className="text-[10px] text-slate-500">{point.year}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-8 space-y-4">
           <h2 className="text-lg font-black">통계 설명</h2>

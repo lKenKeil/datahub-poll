@@ -1,6 +1,8 @@
 /*
-  Usage:
-    NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run sync:official-stats
+  Usage (PowerShell):
+    $env:NEXT_PUBLIC_SUPABASE_URL="https://<project>.supabase.co"
+    $env:SUPABASE_SERVICE_ROLE_KEY="<service_role_key>"
+    npm run sync:official-stats
 */
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -40,21 +42,29 @@ async function upsert(table, rows) {
   return response.json();
 }
 
-async function fetchWorldBankIndicator(indicatorId) {
-  const url = `https://api.worldbank.org/v2/country/KOR/indicator/${indicatorId}?format=json&per_page=30`;
+async function fetchWorldBankSeries(indicatorId) {
+  const url = `https://api.worldbank.org/v2/country/KOR/indicator/${indicatorId}?format=json&per_page=40`;
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`World Bank fetch failed (${indicatorId}): ${response.status}`);
   }
 
   const payload = await response.json();
-  const points = Array.isArray(payload?.[1]) ? payload[1] : [];
-  const latest = points.find((row) => row?.value !== null && row?.value !== undefined);
-  if (!latest) return null;
+  const rows = Array.isArray(payload?.[1]) ? payload[1] : [];
+  const cleaned = rows
+    .map((row) => ({
+      year: String(row?.date ?? ""),
+      value: typeof row?.value === "number" ? row.value : Number(row?.value),
+    }))
+    .filter((row) => /^\d{4}$/.test(row.year) && Number.isFinite(row.value))
+    .sort((a, b) => Number(a.year) - Number(b.year));
+
+  const latest = cleaned.length > 0 ? cleaned[cleaned.length - 1] : null;
+  const recentSeries = cleaned.slice(-8);
 
   return {
-    value: Number(latest.value),
-    year: String(latest.date),
+    latest,
+    series: recentSeries,
   };
 }
 
@@ -65,11 +75,12 @@ function toDateString(year) {
 function formatValue(value, indicatorId) {
   if (!Number.isFinite(value)) return "n/a";
   const num = Number(value);
-  if (indicatorId === "SP.POP.TOTL") return `${Math.round(num).toLocaleString("en-US")} people`;
+
+  if (indicatorId === "SP.POP.TOTL") return `${Math.round(num).toLocaleString("en-US")} 명`;
   if (indicatorId === "IT.NET.USER.ZS") return `${num.toFixed(2)}%`;
   if (indicatorId === "SL.UEM.1524.ZS") return `${num.toFixed(2)}%`;
-  if (indicatorId === "IT.CEL.SETS.P2") return `${num.toFixed(2)} per 100`;
-  if (indicatorId === "IT.NET.BBND.P2") return `${num.toFixed(2)} per 100`;
+  if (indicatorId === "IT.CEL.SETS.P2") return `${num.toFixed(2)} / 100명`;
+  if (indicatorId === "IT.NET.BBND.P2") return `${num.toFixed(2)} / 100명`;
   return Number.isInteger(num) ? num.toLocaleString("en-US") : num.toFixed(2);
 }
 
@@ -130,7 +141,7 @@ async function main() {
     {
       id: "wb_kor_internet_users_pct",
       indicatorId: "IT.NET.USER.ZS",
-      title: "대한민국 인터넷 이용률 (% of population, World Bank)",
+      title: "대한민국 인터넷 이용률 (World Bank)",
       category: KR_TECH,
       source_url: "https://api.worldbank.org/v2/country/KOR/indicator/IT.NET.USER.ZS?format=json",
       methodology: "World Development Indicators",
@@ -157,7 +168,7 @@ async function main() {
     {
       id: "wb_kor_youth_unemployment_pct",
       indicatorId: "SL.UEM.1524.ZS",
-      title: "대한민국 청년 실업률 (15-24세, %, World Bank)",
+      title: "대한민국 청년 실업률 (15-24세, World Bank)",
       category: KR_SOCIO,
       source_url: "https://api.worldbank.org/v2/country/KOR/indicator/SL.UEM.1524.ZS?format=json",
       methodology: "World Development Indicators",
@@ -168,26 +179,29 @@ async function main() {
   const statsRows = [];
 
   for (const item of indicators) {
-    const latest = await fetchWorldBankIndicator(item.indicatorId);
-    if (!latest) continue;
+    const seriesData = await fetchWorldBankSeries(item.indicatorId);
+    if (!seriesData.latest) continue;
+
+    const latest = seriesData.latest;
 
     statsRows.push({
       id: item.id,
       source_id: "world_bank",
       category: item.category,
       title: item.title,
-      summary: `Latest observed value: ${formatValue(latest.value, item.indicatorId)} (year ${latest.year})`,
+      summary: `최신 관측값: ${formatValue(latest.value, item.indicatorId)} (${latest.year}년)`,
       source_url: item.source_url,
       methodology: item.methodology,
       observed_at: toDateString(latest.year),
       published_at: toDateString(latest.year),
-      confidence_note: "Refer to indicator metadata for definitions and measurement notes.",
+      confidence_note: "원문 지표 정의와 측정 방식은 World Bank indicator metadata를 확인하세요.",
       tags: item.tags,
       metadata: {
         source: "world_bank_api",
         indicator_id: item.indicatorId,
         latest_value: latest.value,
         latest_year: latest.year,
+        series: seriesData.series,
       },
       is_verified: true,
       updated_at: now,
