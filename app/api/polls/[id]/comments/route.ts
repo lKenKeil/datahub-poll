@@ -10,6 +10,7 @@ type CommentBody = {
   options: string[];
   votes: number[];
   participants: number;
+  parentId?: string | null;
 };
 
 export async function POST(request: Request, context: Context) {
@@ -30,13 +31,19 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: ensurePollError.message }, { status: 500 });
     }
 
+    const insertPayload: Record<string, unknown> = {
+      poll_id: id,
+      text: body.text,
+      user_name: "익명 유저",
+    };
+
+    if (body.parentId) {
+      insertPayload.parent_id = body.parentId;
+    }
+
     const { data, error } = await supabaseServer
       .from("comments")
-      .insert({
-        poll_id: id,
-        text: body.text,
-        user_name: "익명 유저",
-      })
+      .insert(insertPayload)
       .select("*")
       .single();
 
