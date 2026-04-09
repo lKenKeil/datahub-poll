@@ -208,6 +208,12 @@ export default function Home() {
           </Link>
           <div className="flex items-center gap-6">
             <Link
+              href="/admin"
+              className="px-4 py-2 border border-slate-300 dark:border-white/15 text-slate-700 dark:text-slate-200 text-sm font-bold rounded-full hover:border-blue-500/60 transition-all"
+            >
+              관리자
+            </Link>
+            <Link
               href="/create"
               className="px-5 py-2 bg-slate-900 text-white dark:bg-white dark:text-black text-sm font-bold rounded-full hover:bg-blue-500 hover:text-white transition-all"
             >
