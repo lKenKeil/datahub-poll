@@ -30,9 +30,11 @@
 - Command:
   - `NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... npm run sync:official-stats`
 - Current auto-collected indicators:
-  - World Bank `SP.POP.TOTL` (KOR total population)
-  - World Bank `IT.NET.USER.ZS` (internet users %)
-  - World Bank `SL.UEM.1524.ZS` (youth unemployment %)
+  - IT/테크: `IT.NET.USER.ZS`, `IT.CEL.SETS.P2`, `IT.NET.BBND.P2`
+  - 사회/경제: `SP.POP.TOTL`, `NY.GDP.PCAP.CD`, `FP.CPI.TOTL.ZG`, `SL.UEM.1524.ZS`, `SL.UEM.TOTL.ZS`
+  - 라이프스타일: `SP.DYN.LE00.IN`, `EN.ATM.PM25.MC.M3`, `SP.DYN.TFRT.IN`
+  - 학술/통계: `GB.XPD.RSDV.GD.ZS`, `SE.XPD.TOTL.GD.ZS`
+  - 글로벌 비교: `IT.NET.USER.ZS` 기준 상위 국가 Top10
 
 ## 7) Recommended institution queue (KR first)
 - KOSIS table-level links (official Korean statistics)
