@@ -73,10 +73,19 @@ async function fetchWorldBankSeriesByCountry(indicatorId, countryCode = "KOR") {
   const payload = await response.json();
   const rows = Array.isArray(payload?.[1]) ? payload[1] : [];
   const cleaned = rows
-    .map((row) => ({
-      year: String(row?.date ?? ""),
-      value: typeof row?.value === "number" ? row.value : Number(row?.value),
-    }))
+    .map((row) => {
+      const raw = row?.value;
+      const value =
+        raw === null || raw === undefined || raw === ""
+          ? NaN
+          : typeof raw === "number"
+            ? raw
+            : Number(raw);
+      return {
+        year: String(row?.date ?? ""),
+        value,
+      };
+    })
     .filter((row) => /^\d{4}$/.test(row.year) && Number.isFinite(row.value))
     .sort((a, b) => Number(a.year) - Number(b.year));
 
@@ -96,12 +105,21 @@ async function fetchWorldBankGlobalTopCountries(indicatorId, topN = 10) {
   const rows = Array.isArray(payload?.[1]) ? payload[1] : [];
 
   const normalized = rows
-    .map((row) => ({
-      iso3: String(row?.countryiso3code ?? ""),
-      country: String(row?.country?.value ?? ""),
-      year: String(row?.date ?? ""),
-      value: typeof row?.value === "number" ? row.value : Number(row?.value),
-    }))
+    .map((row) => {
+      const raw = row?.value;
+      const value =
+        raw === null || raw === undefined || raw === ""
+          ? NaN
+          : typeof raw === "number"
+            ? raw
+            : Number(raw);
+      return {
+        iso3: String(row?.countryiso3code ?? ""),
+        country: String(row?.country?.value ?? ""),
+        year: String(row?.date ?? ""),
+        value,
+      };
+    })
     .filter((row) => /^[A-Z]{3}$/.test(row.iso3) && /^\d{4}$/.test(row.year) && Number.isFinite(row.value));
 
   if (normalized.length === 0) return null;
