@@ -43,6 +43,26 @@ async function upsert(table, rows) {
   return response.json();
 }
 
+function normalizeOfficialStatisticsRows(rows) {
+  return rows.map((row) => ({
+    id: row.id,
+    source_id: row.source_id,
+    category: row.category,
+    title: row.title,
+    summary: row.summary ?? null,
+    source_url: row.source_url,
+    methodology: row.methodology ?? null,
+    sample_size: row.sample_size ?? null,
+    observed_at: row.observed_at ?? null,
+    published_at: row.published_at ?? null,
+    confidence_note: row.confidence_note ?? null,
+    tags: row.tags ?? [],
+    metadata: row.metadata ?? {},
+    is_verified: row.is_verified ?? true,
+    updated_at: row.updated_at ?? new Date().toISOString(),
+  }));
+}
+
 async function fetchWorldBankSeriesByCountry(indicatorId, countryCode = "KOR") {
   const url = `https://api.worldbank.org/v2/country/${countryCode}/indicator/${indicatorId}?format=json&per_page=60`;
   const response = await fetch(url);
@@ -401,7 +421,8 @@ async function main() {
     },
   );
 
-  await upsert("official_statistics", statsRows);
+  const normalizedStatsRows = normalizeOfficialStatisticsRows(statsRows);
+  await upsert("official_statistics", normalizedStatsRows);
   console.log(`Synced official sources (${sources.length}) and statistics (${statsRows.length}).`);
 }
 
