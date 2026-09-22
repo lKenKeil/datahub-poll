@@ -162,6 +162,14 @@ function formatValue(value, indicatorId) {
   if (indicatorId === "GB.XPD.RSDV.GD.ZS") return `${num.toFixed(2)}%`;
   if (indicatorId === "SE.XPD.TOTL.GD.ZS") return `${num.toFixed(2)}%`;
   if (indicatorId === "SP.DYN.TFRT.IN") return `${num.toFixed(2)}명`;
+  if (indicatorId === "IT.NET.SECR.P6") return `${num.toFixed(2)} / 1M`;
+  if (indicatorId === "NY.GDP.MKTP.KD.ZG") return `${num.toFixed(2)}%`;
+  if (indicatorId === "NE.TRD.GNFS.ZS") return `${num.toFixed(2)}%`;
+  if (indicatorId === "SP.POP.65UP.TO.ZS") return `${num.toFixed(2)}%`;
+  if (indicatorId === "EG.ELC.ACCS.ZS") return `${num.toFixed(2)}%`;
+  if (indicatorId === "SH.DYN.NMRT") return `${num.toFixed(2)} / 1,000`;
+  if (indicatorId === "IP.JRN.ARTC.SC") return `${Math.round(num).toLocaleString("en-US")}편`;
+  if (indicatorId === "SE.TER.ENRR") return `${num.toFixed(2)}%`;
   return Number.isInteger(num) ? num.toLocaleString("en-US") : num.toFixed(2);
 }
 
@@ -238,6 +246,15 @@ async function main() {
       methodology: "World Development Indicators",
       tags: ["worldbank", "broadband", "korea", "tech"],
     },
+    {
+      id: "wb_kor_secure_servers",
+      indicatorId: "IT.NET.SECR.P6",
+      title: "대한민국 보안 인터넷 서버 수 (100만명당, World Bank)",
+      category: KR_TECH,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/IT.NET.SECR.P6?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "secure-servers", "korea", "tech"],
+    },
 
     // 사회/경제
     {
@@ -285,6 +302,33 @@ async function main() {
       methodology: "World Development Indicators",
       tags: ["worldbank", "employment", "korea", "economy"],
     },
+    {
+      id: "wb_kor_gdp_growth",
+      indicatorId: "NY.GDP.MKTP.KD.ZG",
+      title: "대한민국 GDP 성장률 (연간 %, World Bank)",
+      category: KR_SOCIO,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/NY.GDP.MKTP.KD.ZG?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "gdp-growth", "korea", "economy"],
+    },
+    {
+      id: "wb_kor_trade_openness",
+      indicatorId: "NE.TRD.GNFS.ZS",
+      title: "대한민국 무역 비중 (GDP 대비 %, World Bank)",
+      category: KR_SOCIO,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/NE.TRD.GNFS.ZS?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "trade", "korea", "economy"],
+    },
+    {
+      id: "wb_kor_age_65_plus",
+      indicatorId: "SP.POP.65UP.TO.ZS",
+      title: "대한민국 65세 이상 인구 비중 (World Bank)",
+      category: KR_SOCIO,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/SP.POP.65UP.TO.ZS?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "aging", "korea", "demographics"],
+    },
 
     // 라이프스타일
     {
@@ -314,6 +358,24 @@ async function main() {
       methodology: "World Development Indicators",
       tags: ["worldbank", "fertility", "korea", "lifestyle"],
     },
+    {
+      id: "wb_kor_electricity_access",
+      indicatorId: "EG.ELC.ACCS.ZS",
+      title: "대한민국 전기 접근률 (World Bank)",
+      category: KR_LIFESTYLE,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/EG.ELC.ACCS.ZS?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "electricity", "korea", "lifestyle"],
+    },
+    {
+      id: "wb_kor_neonatal_mortality",
+      indicatorId: "SH.DYN.NMRT",
+      title: "대한민국 신생아 사망률 (World Bank)",
+      category: KR_LIFESTYLE,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/SH.DYN.NMRT?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "health", "korea", "lifestyle"],
+    },
 
     // 학술/통계
     {
@@ -331,6 +393,24 @@ async function main() {
       title: "대한민국 교육지출 (GDP 대비 %, World Bank)",
       category: KR_ACADEMIC,
       source_url: "https://api.worldbank.org/v2/country/KOR/indicator/SE.XPD.TOTL.GD.ZS?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "education", "korea", "academic"],
+    },
+    {
+      id: "wb_kor_scientific_journal_articles",
+      indicatorId: "IP.JRN.ARTC.SC",
+      title: "대한민국 과학기술 논문 수 (World Bank)",
+      category: KR_ACADEMIC,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/IP.JRN.ARTC.SC?format=json",
+      methodology: "World Development Indicators",
+      tags: ["worldbank", "science", "korea", "academic"],
+    },
+    {
+      id: "wb_kor_tertiary_enrollment",
+      indicatorId: "SE.TER.ENRR",
+      title: "대한민국 고등교육 등록률 (World Bank)",
+      category: KR_ACADEMIC,
+      source_url: "https://api.worldbank.org/v2/country/KOR/indicator/SE.TER.ENRR?format=json",
       methodology: "World Development Indicators",
       tags: ["worldbank", "education", "korea", "academic"],
     },
@@ -390,6 +470,34 @@ async function main() {
         indicator_id: "IT.NET.USER.ZS",
         latest_year: globalInternetTop.year,
         ranking_top10: globalInternetTop.top,
+      },
+      is_verified: true,
+      updated_at: now,
+    });
+  }
+
+  const globalBroadbandTop = await fetchWorldBankGlobalTopCountries("IT.NET.BBND.P2", 10);
+  if (globalBroadbandTop && globalBroadbandTop.top.length > 0) {
+    const top3 = globalBroadbandTop.top.slice(0, 3);
+    statsRows.push({
+      id: "wb_global_fixed_broadband_top10",
+      source_id: "world_bank",
+      category: KR_TECH,
+      title: "전세계 유선 초고속인터넷 가입 상위 국가 (World Bank)",
+      summary: `${globalBroadbandTop.year}년 기준 Top3: ${top3
+        .map((row) => `${row.rank}위 ${row.country} ${row.value.toFixed(2)} / 100명`)
+        .join(" / ")}`,
+      source_url: "https://api.worldbank.org/v2/country/all/indicator/IT.NET.BBND.P2?format=json",
+      methodology: "World Development Indicators (country-level latest year ranking)",
+      observed_at: toDateString(globalBroadbandTop.year),
+      published_at: toDateString(globalBroadbandTop.year),
+      confidence_note: "국가별 최신 공개 연도 중 같은 연도 값을 기준으로 비교합니다.",
+      tags: ["worldbank", "global", "broadband", "ranking", "tech"],
+      metadata: {
+        source: "world_bank_api",
+        indicator_id: "IT.NET.BBND.P2",
+        latest_year: globalBroadbandTop.year,
+        ranking_top10: globalBroadbandTop.top,
       },
       is_verified: true,
       updated_at: now,

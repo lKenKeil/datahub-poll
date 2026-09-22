@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { supabaseServer } from "@/lib/supabase-server";
 import { PollCategory } from "@/lib/types";
 
@@ -24,22 +25,29 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const raw = (await request.json()) as Record<string, unknown>;
+    let raw: Record<string, unknown>;
+    try {
+      raw = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ error: "invalid JSON body." }, { status: 400 });
+    }
 
-    const rawTitle = String(raw.title ?? "").trim();
-    const rawCategory = String(raw.category ?? "").trim() as PollCategory;
-    const rawOptions = Array.isArray(raw.options) ? raw.options.map((value) => String(value).trim()) : [];
+    const rawTitle = typeof raw?.title === "string" ? raw.title.trim() : "";
+    const rawCategory = (typeof raw?.category === "string" ? raw.category.trim() : "") as PollCategory;
+    const rawOptions = Array.isArray(raw?.options) && raw.options.every((value) => typeof value === "string")
+      ? raw.options.map((value) => value.trim())
+      : [];
 
-    if (!rawTitle || rawTitle.length < 3) {
-      return NextResponse.json({ error: "title is required (min 3 chars)." }, { status: 400 });
+    if (rawTitle.length < 3 || rawTitle.length > 120) {
+      return NextResponse.json({ error: "title must be 3-120 chars." }, { status: 400 });
     }
 
     if (!validCategories.has(rawCategory)) {
       return NextResponse.json({ error: "invalid category." }, { status: 400 });
     }
 
-    if (rawOptions.length < 2 || rawOptions.length > 6 || rawOptions.some((opt) => !opt)) {
-      return NextResponse.json({ error: "options must be 2-6 non-empty values." }, { status: 400 });
+    if (rawOptions.length < 2 || rawOptions.length > 6 || rawOptions.some((opt) => !opt || opt.length > 50)) {
+      return NextResponse.json({ error: "options must be 2-6 values of 1-50 chars." }, { status: 400 });
     }
 
     const uniqueOptions = new Set(rawOptions.map((option) => option.toLowerCase()));
@@ -47,27 +55,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "options must be unique." }, { status: 400 });
     }
 
-    const votes =
-      Array.isArray(raw.votes) &&
-      raw.votes.length === rawOptions.length &&
-      raw.votes.every((value) => Number.isInteger(value) && Number(value) >= 0)
-        ? (raw.votes as number[])
-        : Array(rawOptions.length).fill(0);
+    if (raw.official_fact !== undefined && typeof raw.official_fact !== "string") {
+      return NextResponse.json({ error: "official_fact must be a string." }, { status: 400 });
+    }
 
-    const participants = Number.isInteger(raw.participants) && Number(raw.participants) >= 0 ? Number(raw.participants) : 0;
-    const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : `custom_${Date.now()}`;
+    const officialFact = typeof raw.official_fact === "string" ? raw.official_fact.trim() : "";
+    if (officialFact.length > 300) {
+      return NextResponse.json({ error: "official_fact must be at most 300 chars." }, { status: 400 });
+    }
+
+    const id = `custom_${randomUUID()}`;
 
     const insertPayload: Record<string, unknown> = {
       id,
       title: rawTitle,
       category: rawCategory,
       options: rawOptions,
-      votes,
-      participants,
+      votes: Array(rawOptions.length).fill(0),
+      participants: 0,
     };
 
-    if (typeof raw.official_fact === "string" && raw.official_fact.trim()) {
-      insertPayload.official_fact = raw.official_fact.trim();
+    if (officialFact) {
+      insertPayload.official_fact = officialFact;
     }
 
     let { error } = await supabaseServer.from("polls").insert(insertPayload);

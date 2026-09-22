@@ -6,8 +6,11 @@ import { POLLS } from '../data/polls';
 import { DbPoll, OfficialStatistic, PollCategory } from '../lib/types';
 import { supabase } from '../lib/supabase';
 
-const categories: Array<'전체' | PollCategory> = [
+type HomeCategory = '전체' | 'HOT' | PollCategory;
+
+const categories: HomeCategory[] = [
   '전체',
+  'HOT',
   '학술/통계',
   'IT/테크',
   '사회/경제',
@@ -27,11 +30,31 @@ function getReliability(participants: number) {
 
 function getTrendingScore(poll: DbPoll) {
   const participants = poll.participants ?? 0;
+  const tightRaceBoost = isTightRace(poll.votes) ? 120 : 0;
   const created = poll.created_at ? new Date(poll.created_at) : null;
-  if (!created || Number.isNaN(created.getTime())) return participants;
+  if (!created || Number.isNaN(created.getTime())) return participants + tightRaceBoost;
   const ageHours = Math.max(0, (Date.now() - created.getTime()) / (1000 * 60 * 60));
   const freshnessBoost = Math.max(0, 36 - ageHours) * 8;
-  return participants + freshnessBoost;
+  return participants + freshnessBoost + tightRaceBoost;
+}
+
+function isTightRace(votes?: number[]) {
+  if (!votes || votes.length < 2) return false;
+  const total = votes.reduce((sum, vote) => sum + vote, 0);
+  if (total < 10) return false;
+  const sorted = [...votes].sort((a, b) => b - a);
+  return ((sorted[0] - sorted[1]) / total) * 100 <= 8;
+}
+
+function isFreshPoll(poll: DbPoll) {
+  const created = poll.created_at ? new Date(poll.created_at) : null;
+  if (!created || Number.isNaN(created.getTime())) return false;
+  const ageHours = (Date.now() - created.getTime()) / (1000 * 60 * 60);
+  return ageHours <= 72;
+}
+
+function isHotPoll(poll: DbPoll) {
+  return (poll.participants ?? 0) >= 20 || isTightRace(poll.votes) || (isFreshPoll(poll) && (poll.participants ?? 0) >= 5);
 }
 
 function readLatestValue(stat: OfficialStatistic) {
@@ -47,7 +70,12 @@ function readLatestYear(stat: OfficialStatistic) {
 function formatStatValue(stat: OfficialStatistic, value: number) {
   const indicatorId = (stat.metadata as Record<string, unknown> | null | undefined)?.indicator_id;
   if (indicatorId === 'SP.POP.TOTL') return `${Math.round(value).toLocaleString()} 명`;
-  if (indicatorId === 'IT.NET.USER.ZS' || indicatorId === 'SL.UEM.1524.ZS') return `${value.toFixed(2)}%`;
+  if (
+    indicatorId === 'IT.NET.USER.ZS' ||
+    indicatorId === 'SL.UEM.1524.ZS' ||
+    indicatorId === 'SL.UEM.TOTL.ZS' ||
+    indicatorId === 'FP.CPI.TOTL.ZG'
+  ) return `${value.toFixed(2)}%`;
   if (indicatorId === 'IT.CEL.SETS.P2' || indicatorId === 'IT.NET.BBND.P2') return `${value.toFixed(2)} / 100명`;
   return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
 }
@@ -65,7 +93,7 @@ export default function Home() {
   const [dbPolls, setDbPolls] = useState<DbPoll[]>([]);
   const [officialStats, setOfficialStats] = useState<OfficialStatistic[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeCategory, setActiveCategory] = useState<'전체' | PollCategory>('전체');
+  const [activeCategory, setActiveCategory] = useState<HomeCategory>('전체');
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
   const [openStatId, setOpenStatId] = useState<string | null>(null);
@@ -162,21 +190,24 @@ export default function Home() {
 
   const filteredOfficialPolls = useMemo(() => {
     return POLLS.filter((poll) => {
-      const categoryMatch = activeCategory === '전체' || poll.category === activeCategory;
+      const categoryMatch = activeCategory === '전체' || activeCategory === 'HOT' || poll.category === activeCategory;
       const text = `${poll.title} ${poll.officialFact}`.toLowerCase();
       const searchMatch = !normalizedSearch || text.includes(normalizedSearch);
-      return categoryMatch && searchMatch;
+      return activeCategory !== 'HOT' && categoryMatch && searchMatch;
     });
   }, [activeCategory, normalizedSearch]);
 
   const filteredCommunityPolls = useMemo(() => {
     return dbPolls.filter((poll) => {
-      const categoryMatch = activeCategory === '전체' || poll.category === activeCategory;
+      const categoryMatch = activeCategory === '전체' || activeCategory === 'HOT' || poll.category === activeCategory;
+      const hotMatch = activeCategory !== 'HOT' || isHotPoll(poll);
       const text = `${poll.title} ${poll.category ?? ''}`.toLowerCase();
       const searchMatch = !normalizedSearch || text.includes(normalizedSearch);
-      return categoryMatch && searchMatch;
+      return categoryMatch && hotMatch && searchMatch;
     });
   }, [dbPolls, activeCategory, normalizedSearch]);
+
+  const hotPollCount = useMemo(() => dbPolls.filter(isHotPoll).length, [dbPolls]);
 
   const trendingPolls = useMemo(() => {
     return [...filteredCommunityPolls]
@@ -186,10 +217,10 @@ export default function Home() {
 
   const filteredOfficialStats = useMemo(() => {
     return officialStats.filter((stat) => {
-      const categoryMatch = activeCategory === '전체' || stat.category === activeCategory;
+      const categoryMatch = activeCategory === '전체' || activeCategory === 'HOT' || stat.category === activeCategory;
       const text = `${stat.title} ${stat.summary ?? ''} ${(stat.tags ?? []).join(' ')}`.toLowerCase();
       const searchMatch = !normalizedSearch || text.includes(normalizedSearch);
-      return categoryMatch && searchMatch;
+      return activeCategory !== 'HOT' && categoryMatch && searchMatch;
     });
   }, [officialStats, activeCategory, normalizedSearch]);
 
@@ -260,6 +291,7 @@ export default function Home() {
             <div className="rounded-2xl bg-slate-100 dark:bg-white/5 p-4 text-sm space-y-1">
               <p>오피셜 논제: <span className="font-black">{filteredOfficialPolls.length}</span></p>
               <p>커뮤니티 논제: <span className="font-black">{filteredCommunityPolls.length}</span></p>
+              <p>HOT 논제: <span className="font-black">{hotPollCount}</span></p>
               <p>공식 통계: <span className="font-black">{filteredOfficialStats.length}</span></p>
             </div>
           </aside>
@@ -299,7 +331,7 @@ export default function Home() {
                       이 논제 참여하기
                     </Link>
                     <a href="#official-intel-feed" className="px-4 py-2 rounded-full border border-slate-300 dark:border-white/15 text-sm font-black hover:border-blue-500/60">
-                      통계 먼저 보기
+                      근거 데이터 보기
                     </a>
                   </div>
                 </>
@@ -329,7 +361,7 @@ export default function Home() {
                       <p className="text-cyan-500 text-lg font-black mt-2">
                         {value !== null ? formatStatValue(stat, value) : 'N/A'}
                       </p>
-                      <p className="text-[11px] text-slate-500">{readLatestYear(stat) ?? 'year n/a'}</p>
+                      <p className="text-[11px] text-slate-500">{readLatestYear(stat) ? `최근 공개 연도 ${readLatestYear(stat)}` : 'year n/a'}</p>
                     </Link>
                   );
                 })}
@@ -377,7 +409,7 @@ export default function Home() {
                     {latestValue !== null ? (
                       <div className="inline-flex items-end gap-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 px-3 py-2">
                         <span className="text-cyan-600 dark:text-cyan-300 text-xl font-black">{formatStatValue(item, latestValue)}</span>
-                        <span className="text-[11px] text-cyan-700/80 dark:text-cyan-200/80 font-bold">{latestYear ? `(${latestYear})` : ''}</span>
+                        <span className="text-[11px] text-cyan-700/80 dark:text-cyan-200/80 font-bold">{latestYear ? `최근 공개 ${latestYear}` : ''}</span>
                       </div>
                     ) : null}
                     {item.summary ? <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{item.summary}</p> : null}
@@ -388,10 +420,10 @@ export default function Home() {
                         onClick={() => setOpenStatId(opened ? null : item.id)}
                         className="px-3 py-1.5 text-xs rounded-full border border-slate-300 dark:border-white/20 hover:border-cyan-500/50"
                       >
-                        {opened ? '접기' : '인사이트'}
+                        {opened ? '접기' : '요약 보기'}
                       </button>
                       <Link href={`/stats/${item.id}`} className="px-3 py-1.5 text-xs rounded-full bg-indigo-600 text-white hover:bg-indigo-500">
-                        통계 보기
+                        자세히 보기
                       </Link>
                     </div>
 
@@ -428,6 +460,9 @@ export default function Home() {
                     <div className="space-y-4">
                       <div className="flex justify-between items-start gap-2">
                         <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-black rounded uppercase">{poll.category || '커뮤니티'}</span>
+                        {isHotPoll(poll) ? (
+                          <span className="px-2 py-0.5 bg-orange-500/15 text-orange-400 text-[10px] font-black rounded uppercase">HOT</span>
+                        ) : null}
                         <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${reliability.style}`}>{reliability.label}</span>
                       </div>
                       <h3 className="text-lg font-bold leading-snug">{poll.title}</h3>

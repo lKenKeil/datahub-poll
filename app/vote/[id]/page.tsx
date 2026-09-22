@@ -303,14 +303,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       const response = await fetch(`/api/polls/${pollData.id}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          optionIndex: idx,
-          title: pollData.title,
-          category: pollData.category || '커뮤니티',
-          options: pollData.options,
-          votes: pollData.votes,
-          participants: pollData.participants,
-        }),
+        body: JSON.stringify({ optionIndex: idx }),
       });
 
       const json = (await response.json()) as { data?: IncrementVoteResponse; error?: string };
@@ -337,11 +330,6 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: inputText.trim(),
-          title: pollData.title,
-          category: pollData.category || '커뮤니티',
-          options: pollData.options,
-          votes: pollData.votes,
-          participants: pollData.participants,
           parentId: null,
         }),
       });
@@ -365,11 +353,6 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: replyText.trim(),
-          title: pollData.title,
-          category: pollData.category || '커뮤니티',
-          options: pollData.options,
-          votes: pollData.votes,
-          participants: pollData.participants,
           parentId,
         }),
       });

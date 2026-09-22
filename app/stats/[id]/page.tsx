@@ -5,6 +5,12 @@ import { OfficialStatistic } from "@/lib/types";
 
 type Params = { id: string };
 type YearPoint = { year: string; value: number };
+type RankingPoint = {
+  rank: number;
+  country: string;
+  iso3?: string;
+  value: number;
+};
 
 function readMetadataNumber(item: OfficialStatistic, key: string) {
   const value = (item.metadata as Record<string, unknown> | null | undefined)?.[key];
@@ -32,10 +38,34 @@ function readSeries(item: OfficialStatistic): YearPoint[] {
     .sort((a, b) => Number(a.year) - Number(b.year));
 }
 
+function readRanking(item: OfficialStatistic): RankingPoint[] {
+  const raw = (item.metadata as Record<string, unknown> | null | undefined)?.ranking_top10;
+  if (!Array.isArray(raw)) return [];
+
+  return raw
+    .map((point) => {
+      if (!point || typeof point !== "object") return null;
+      const row = point as Record<string, unknown>;
+      const rank = Number(row.rank);
+      const country = String(row.country ?? "");
+      const iso3 = typeof row.iso3 === "string" ? row.iso3 : undefined;
+      const value = Number(row.value);
+      if (!Number.isFinite(rank) || !country || !Number.isFinite(value)) return null;
+      return iso3 ? { rank, country, iso3, value } : { rank, country, value };
+    })
+    .filter((point): point is RankingPoint => point !== null)
+    .sort((a, b) => a.rank - b.rank);
+}
+
 function formatValue(item: OfficialStatistic, value: number) {
   const indicator = readMetadataString(item, "indicator_id");
   if (indicator === "SP.POP.TOTL") return `${Math.round(value).toLocaleString()} 명`;
-  if (indicator === "IT.NET.USER.ZS" || indicator === "SL.UEM.1524.ZS") return `${value.toFixed(2)}%`;
+  if (
+    indicator === "IT.NET.USER.ZS" ||
+    indicator === "SL.UEM.1524.ZS" ||
+    indicator === "SL.UEM.TOTL.ZS" ||
+    indicator === "FP.CPI.TOTL.ZG"
+  ) return `${value.toFixed(2)}%`;
   if (indicator === "IT.CEL.SETS.P2" || indicator === "IT.NET.BBND.P2") return `${value.toFixed(2)} / 100명`;
   return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
 }
@@ -77,6 +107,7 @@ export default async function OfficialStatisticPage({
   const latestValue = readMetadataNumber(item, "latest_value");
   const latestYear = readMetadataString(item, "latest_year");
   const series = readSeries(item);
+  const ranking = readRanking(item);
 
   const minValue = series.length > 0 ? Math.min(...series.map((point) => point.value)) : 0;
   const maxValue = series.length > 0 ? Math.max(...series.map((point) => point.value)) : 0;
@@ -135,7 +166,7 @@ export default async function OfficialStatisticPage({
                   {formatValue(item, latestValue)}
                 </span>
                 <span className="text-sm text-cyan-700/80 dark:text-cyan-100/80">
-                  {latestYear ? `${latestYear} 기준` : ""}
+                  {latestYear ? `최근 공개 연도 ${latestYear}` : ""}
                 </span>
               </div>
               {delta !== null ? (
@@ -179,6 +210,27 @@ export default async function OfficialStatisticPage({
           </section>
         ) : null}
 
+        {ranking.length > 0 ? (
+          <section className="rounded-3xl border border-cyan-500/25 bg-white dark:bg-white/[0.03] p-8 space-y-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-black">상위 10개국</h2>
+              <span className="text-xs text-slate-500">{latestYear ? `최근 공개 연도 ${latestYear}` : "ranking"}</span>
+            </div>
+            <div className="divide-y divide-slate-200 dark:divide-white/10 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+              {ranking.map((row) => (
+                <div key={`${item.id}_${row.rank}_${row.iso3 ?? row.country}`} className="grid grid-cols-[54px_1fr_auto] gap-3 px-4 py-3 items-center bg-slate-50 dark:bg-white/[0.02]">
+                  <span className="text-sm font-black text-cyan-500">#{row.rank}</span>
+                  <div>
+                    <p className="text-sm font-black">{row.country}</p>
+                    {row.iso3 ? <p className="text-[11px] text-slate-500">{row.iso3}</p> : null}
+                  </div>
+                  <span className="text-sm font-black">{formatValue(item, row.value)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {related.length > 0 ? (
           <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-8 space-y-4">
             <h2 className="text-lg font-black">연관 통계</h2>
@@ -198,7 +250,27 @@ export default async function OfficialStatisticPage({
         ) : null}
 
         <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-8 space-y-4">
-          <h2 className="text-lg font-black">통계 설명</h2>
+          <h2 className="text-lg font-black">연도별 데이터</h2>
+          {series.length > 0 ? (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
+              <div className="grid grid-cols-2 bg-slate-100 dark:bg-white/10 px-4 py-2 text-xs font-black text-slate-500">
+                <span>연도</span>
+                <span className="text-right">값</span>
+              </div>
+              {[...series].reverse().map((point) => (
+                <div key={`${item.id}_table_${point.year}`} className="grid grid-cols-2 px-4 py-2 text-sm border-t border-slate-200 dark:border-white/10">
+                  <span className="font-bold">{point.year}</span>
+                  <span className="text-right font-black">{formatValue(item, point.value)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">연도별 원자료가 아직 연결되지 않았습니다.</p>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-8 space-y-4">
+          <h2 className="text-lg font-black">출처와 해석 기준</h2>
           {item.methodology ? <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-black">방법론:</span> {item.methodology}</p> : null}
           {item.sample_size ? <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-black">표본수:</span> {item.sample_size.toLocaleString()}</p> : null}
           {item.confidence_note ? <p className="text-sm text-slate-700 dark:text-slate-300"><span className="font-black">신뢰 참고:</span> {item.confidence_note}</p> : null}

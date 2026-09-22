@@ -67,14 +67,10 @@ export default function CreatePollPage() {
 
     setIsSubmitting(true);
 
-    const id = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const payload: Record<string, unknown> = {
-      id,
       title: `🔥 ${title.trim()}`,
       category,
       options: trimmedOptions,
-      votes: Array(trimmedOptions.length).fill(0),
-      participants: 0,
     };
 
     if (officialFact.trim()) {
