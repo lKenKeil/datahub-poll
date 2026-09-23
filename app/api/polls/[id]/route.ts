@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabase-server";
+import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server";
+import { isValidVoterId } from "@/lib/voter-id";
 
 type Context = { params: Promise<{ id: string }> };
 
 export async function GET(_: Request, context: Context) {
   const { id } = await context.params;
   const userFingerprint = _.headers.get("x-user-fp")?.trim() ?? "";
+  const voterId = _.headers.get("x-voter-id")?.trim().toLowerCase() ?? "";
+
+  if (voterId && !isValidVoterId(voterId)) {
+    return NextResponse.json({ error: "invalid voter id." }, { status: 400 });
+  }
 
   const [{ data: poll, error: pollError }, { data: comments, error: commentsError }] = await Promise.all([
     supabaseServer.from("polls").select("*").eq("id", id).maybeSingle(),
@@ -24,11 +30,30 @@ export async function GET(_: Request, context: Context) {
     return NextResponse.json({ error: commentsError.message }, { status: 500 });
   }
 
+  let viewerVote: { optionIndex: number } | null = null;
+  if (voterId) {
+    const supabaseMutation = getSupabaseMutationClient();
+    const { data: vote, error: voteError } = await supabaseMutation
+      .from("poll_votes")
+      .select("option_index")
+      .eq("poll_id", id)
+      .eq("voter_id", voterId)
+      .maybeSingle();
+
+    if (voteError) {
+      return NextResponse.json({ error: voteError.message }, { status: 500 });
+    }
+
+    if (vote && Number.isInteger(vote.option_index)) {
+      viewerVote = { optionIndex: vote.option_index };
+    }
+  }
+
   const commentRows = (comments ?? []) as Array<Record<string, unknown>>;
   const commentIds = commentRows.map((row) => String(row.id));
 
   if (commentIds.length === 0) {
-    return NextResponse.json({ poll: poll ?? null, comments: [] });
+    return NextResponse.json({ poll: poll ?? null, comments: [], viewerVote });
   }
 
   const { data: reactions, error: reactionsError } = await supabaseServer
@@ -76,5 +101,5 @@ export async function GET(_: Request, context: Context) {
     };
   });
 
-  return NextResponse.json({ poll: poll ?? null, comments: enriched });
+  return NextResponse.json({ poll: poll ?? null, comments: enriched, viewerVote });
 }

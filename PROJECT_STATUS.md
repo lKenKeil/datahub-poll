@@ -14,18 +14,18 @@
 
 ## 1. 사용 중인 기술 스택
 
-| 구분 | 현재 상태 |
-| --- | --- |
-| 프레임워크 | Next.js 16.2.2, App Router, Turbopack |
-| UI 런타임 | React / React DOM 19.2.4 |
-| 언어 | TypeScript 5.9.3, strict mode, noEmit |
-| 스타일 | Tailwind CSS 4.2.2, `@tailwindcss/postcss` 4.2.2 |
-| 테마 | next-themes 0.4.6, class 기반 dark mode |
-| DB/BaaS | Supabase JS 2.102.1, PostgreSQL/RLS/RPC/Realtime |
-| 폰트 | `next/font`의 Geist / Geist Mono |
-| lint | ESLint 9.39.4 + eslint-config-next 16.2.2 |
-| 실행 확인 환경 | Node 22.20.0, npm 10.9.3 |
-| 테스트 | 테스트 프레임워크/테스트 파일/`npm test` 스크립트 없음 |
+| 구분           | 현재 상태                                              |
+| -------------- | ------------------------------------------------------ |
+| 프레임워크     | Next.js 16.2.2, App Router, Turbopack                  |
+| UI 런타임      | React / React DOM 19.2.4                               |
+| 언어           | TypeScript 5.9.3, strict mode, noEmit                  |
+| 스타일         | Tailwind CSS 4.2.2, `@tailwindcss/postcss` 4.2.2       |
+| 테마           | next-themes 0.4.6, class 기반 dark mode                |
+| DB/BaaS        | Supabase JS 2.102.1, PostgreSQL/RLS/RPC/Realtime       |
+| 폰트           | `next/font`의 Geist / Geist Mono                       |
+| lint           | ESLint 9.39.4 + eslint-config-next 16.2.2              |
+| 실행 확인 환경 | Node 22.20.0, npm 10.9.3                               |
+| 테스트         | 테스트 프레임워크/테스트 파일/`npm test` 스크립트 없음 |
 
 ## 2. 전체 폴더 및 주요 파일 구조
 
@@ -269,7 +269,7 @@ SEO는 루트의 고정 title/description과 favicon만 있다.
 현재 코드:
 
 ```tsx
-const mounted = typeof window !== 'undefined'
+const mounted = typeof window !== "undefined";
 ```
 
 서버에서는 placeholder(`THEME`, placeholder class), 첫 브라우저 렌더에서는 실제 버튼(`LIGHT` 또는 `DARK`, 다른 class)을 만들기 때문에 React hydration 규칙을 위반한다. `<html suppressHydrationWarning>`은 html 한 단계의 class 차이를 위한 것이며 하위 버튼 mismatch를 숨기지 않는다.
@@ -277,13 +277,17 @@ const mounted = typeof window !== 'undefined'
 현재 구조를 유지하는 안전한 수정 방향:
 
 ```tsx
-const [mounted, setMounted] = useState(false)
-const { resolvedTheme, setTheme } = useTheme()
+const [mounted, setMounted] = useState(false);
+const { resolvedTheme, setTheme } = useTheme();
 
-useEffect(() => setMounted(true), [])
+useEffect(() => setMounted(true), []);
 
 if (!mounted) {
-  return <button type="button" disabled aria-label="테마 불러오는 중">THEME</button>
+  return (
+    <button type="button" disabled aria-label="테마 불러오는 중">
+      THEME
+    </button>
+  );
 }
 ```
 
@@ -352,15 +356,15 @@ React는 현재 댓글 텍스트를 일반 문자열로 렌더하므로 직접�
 
 2026-09-23 실행 결과:
 
-| 검사 | 결과 |
-| --- | --- |
-| `npm run lint` | 통과, 오류/경고 없음 |
-| `npx tsc --noEmit` | 통과 |
-| `npm run build` | 통과, 4.5초 compile / 모든 route 생성 성공 |
-| production smoke test | 홈/생성/관리자/투표 상세/통계 상세 및 주요 읽기 API 정상 |
-| `npm ls --depth=0` | 앱 의존성 로드 성공, extraneous 패키지 5개 표시 |
-| `npm outdated` | Next 16.3.5, Supabase 2.117.0 등 업데이트 가능 |
-| `npm audit --omit=dev` | 6건: critical 1, high 4, moderate 1 |
+| 검사                   | 결과                                                     |
+| ---------------------- | -------------------------------------------------------- |
+| `npm run lint`         | 통과, 오류/경고 없음                                     |
+| `npx tsc --noEmit`     | 통과                                                     |
+| `npm run build`        | 통과, 4.5초 compile / 모든 route 생성 성공               |
+| production smoke test  | 홈/생성/관리자/투표 상세/통계 상세 및 주요 읽기 API 정상 |
+| `npm ls --depth=0`     | 앱 의존성 로드 성공, extraneous 패키지 5개 표시          |
+| `npm outdated`         | Next 16.3.5, Supabase 2.117.0 등 업데이트 가능           |
+| `npm audit --omit=dev` | 6건: critical 1, high 4, moderate 1                      |
 
 감사 항목에는 Next.js 16.2.2, Next가 포함한 postcss/sharp, nanoid, Supabase realtime 계열의 ws, baseline-browser-mapping이 포함된다. 특히 npm audit은 현재 Next 범위를 critical로 분류하며 16.3.5에서 해소 가능한 것으로 안내한다. 자동 `npm audit fix --force`는 실행하지 않았다. Next/React는 프로젝트 규칙상 버전별 breaking change를 먼저 확인하고, 16.3.x 로컬 문서/릴리스 노트 검토 → 별도 브랜치 업데이트 → 전체 회귀 테스트가 필요하다.
 

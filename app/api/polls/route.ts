@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
-import { supabaseServer } from "@/lib/supabase-server";
+import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server";
 import { PollCategory } from "@/lib/types";
 
 const validCategories = new Set<PollCategory>(["학술/통계", "IT/테크", "사회/경제", "라이프스타일", "커뮤니티"]);
@@ -79,12 +79,13 @@ export async function POST(request: Request) {
       insertPayload.official_fact = officialFact;
     }
 
-    let { error } = await supabaseServer.from("polls").insert(insertPayload);
+    const supabaseMutation = getSupabaseMutationClient();
+    let { error } = await supabaseMutation.from("polls").insert(insertPayload);
 
     // Backward-compatible path for DBs where `official_fact` column has not been migrated yet.
     if (error?.message?.includes("official_fact")) {
       delete insertPayload.official_fact;
-      const retry = await supabaseServer.from("polls").insert(insertPayload);
+      const retry = await supabaseMutation.from("polls").insert(insertPayload);
       error = retry.error;
     }
 

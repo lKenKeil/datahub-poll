@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabase-server";
+import { getSupabaseMutationClient } from "@/lib/supabase-server";
+import { isValidVoterId } from "@/lib/voter-id";
 
 type Context = { params: Promise<{ id: string }> };
 
 type VoteBody = {
   optionIndex?: unknown;
+  voterId?: unknown;
 };
 
 export async function POST(request: Request, context: Context) {
@@ -26,7 +28,13 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: "optionIndex must be an integer." }, { status: 400 });
     }
 
-    const { data: poll, error: pollError } = await supabaseServer
+    const voterId = typeof body?.voterId === "string" ? body.voterId.trim().toLowerCase() : "";
+    if (!isValidVoterId(voterId)) {
+      return NextResponse.json({ error: "voterId must be a valid UUID." }, { status: 400 });
+    }
+
+    const supabaseMutation = getSupabaseMutationClient();
+    const { data: poll, error: pollError } = await supabaseMutation
       .from("polls")
       .select("id,title,category,options,votes,participants")
       .eq("id", id)
@@ -62,21 +70,18 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: "optionIndex is out of range." }, { status: 400 });
     }
 
-    // The deployed RPC still has legacy seed parameters. Every value here is
-    // loaded from the database, never accepted from the client request.
     const rpcPayload = {
       p_poll_id: id,
       p_option_index: optionIndex as number,
-      p_title: poll.title,
-      p_category: poll.category,
-      p_options: options,
-      p_seed_votes: votes,
-      p_seed_participants: participants,
+      p_voter_id: voterId,
     };
 
-    const { data: rpcData, error: rpcError } = await supabaseServer.rpc("increment_poll_vote", rpcPayload);
+    const { data: rpcData, error: rpcError } = await supabaseMutation.rpc("increment_poll_vote", rpcPayload);
 
     if (rpcError) {
+      if (rpcError.code === "23505") {
+        return NextResponse.json({ error: "Already voted on this poll." }, { status: 409 });
+      }
       return NextResponse.json({ error: rpcError.message }, { status: 500 });
     }
 
@@ -85,7 +90,15 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: "vote update returned no data." }, { status: 500 });
     }
 
-    return NextResponse.json({ data: row, mode: "rpc" });
+    return NextResponse.json({
+      data: {
+        id: row.id,
+        votes: row.votes,
+        participants: row.participants,
+        optionIndex: row.option_index,
+      },
+      mode: "rpc",
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: `vote API failed: ${message}` }, { status: 500 });

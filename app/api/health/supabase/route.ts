@@ -6,11 +6,16 @@ export async function GET() {
 
   try {
     const { error } = await supabaseServer.from("polls").select("id").limit(1);
+    const configurationError = info.mutationKeyConfigured
+      ? null
+      : "SUPABASE_SERVICE_ROLE_KEY is not configured; server mutations are disabled.";
+    const ok = !error && !configurationError;
+
     return NextResponse.json({
-      ok: !error,
+      ok,
       info,
-      error: error?.message ?? null,
-    });
+      error: error?.message ?? configurationError,
+    }, { status: ok ? 200 : 503 });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(

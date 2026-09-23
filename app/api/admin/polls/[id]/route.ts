@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabase-server";
+import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { isAdminAuthorized } from "@/lib/admin-auth";
 
 type Context = { params: Promise<{ id: string }> };
@@ -9,6 +9,8 @@ export async function PATCH(request: Request, context: Context) {
   if (!auth.ok) {
     return NextResponse.json({ error: auth.reason }, { status: 401 });
   }
+
+  const supabaseMutation = getSupabaseMutationClient();
 
   const { id } = await context.params;
   const body = (await request.json()) as Record<string, unknown>;
@@ -41,7 +43,7 @@ export async function PATCH(request: Request, context: Context) {
     return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
   }
 
-  const { data, error } = await supabaseServer
+  const { data, error } = await supabaseMutation
     .from("polls")
     .update(patch)
     .eq("id", id)
@@ -61,9 +63,11 @@ export async function DELETE(request: Request, context: Context) {
     return NextResponse.json({ error: auth.reason }, { status: 401 });
   }
 
+  const supabaseMutation = getSupabaseMutationClient();
+
   const { id } = await context.params;
 
-  const { data: comments, error: commentsError } = await supabaseServer
+  const { data: comments, error: commentsError } = await supabaseMutation
     .from("comments")
     .select("id")
     .eq("poll_id", id);
@@ -74,7 +78,7 @@ export async function DELETE(request: Request, context: Context) {
 
   const commentIds = (comments ?? []).map((row) => String((row as { id: string }).id));
   if (commentIds.length > 0) {
-    const { error: reactionsDeleteError } = await supabaseServer
+    const { error: reactionsDeleteError } = await supabaseMutation
       .from("comment_reactions")
       .delete()
       .in("comment_id", commentIds);
@@ -84,7 +88,7 @@ export async function DELETE(request: Request, context: Context) {
     }
   }
 
-  const { error: commentsDeleteError } = await supabaseServer
+  const { error: commentsDeleteError } = await supabaseMutation
     .from("comments")
     .delete()
     .eq("poll_id", id);
@@ -93,7 +97,7 @@ export async function DELETE(request: Request, context: Context) {
     return NextResponse.json({ error: commentsDeleteError.message }, { status: 500 });
   }
 
-  const { error: pollDeleteError } = await supabaseServer
+  const { error: pollDeleteError } = await supabaseMutation
     .from("polls")
     .delete()
     .eq("id", id);

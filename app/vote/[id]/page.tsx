@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { POLLS } from '../../../data/polls';
 import { CommentRow, DbPoll } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
+import { isValidVoterId, VOTER_ID_STORAGE_KEY } from '@/lib/voter-id';
 
 type VotePageParams = { id: string };
 
@@ -27,6 +28,7 @@ type IncrementVoteResponse = {
   id: string;
   votes: number[];
   participants: number;
+  optionIndex: number;
 };
 
 type CommentView = CommentRow & {
@@ -67,6 +69,15 @@ function getOrCreateFingerprint() {
   return created;
 }
 
+function getOrCreateVoterId() {
+  const existing = localStorage.getItem(VOTER_ID_STORAGE_KEY)?.trim().toLowerCase();
+  if (isValidVoterId(existing)) return existing;
+
+  const created = crypto.randomUUID();
+  localStorage.setItem(VOTER_ID_STORAGE_KEY, created);
+  return created;
+}
+
 export default function VotePage({ params }: { params: Promise<VotePageParams> }) {
   const resolvedParams = use(params);
   const id = resolvedParams.id;
@@ -85,15 +96,19 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [isOfficial, setIsOfficial] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userFingerprint, setUserFingerprint] = useState('');
+  const [voterId, setVoterId] = useState('');
   const [syncState, setSyncState] = useState<'live' | 'syncing' | 'reconnecting'>('live');
   const lastSnapshotRef = useRef('');
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setUserFingerprint(getOrCreateFingerprint());
+    setVoterId(getOrCreateVoterId());
   }, []);
 
   const fetchAllData = useCallback(async (options?: { silent?: boolean }) => {
+    if (!voterId) return;
+
     const silent = options?.silent ?? false;
     if (!silent) setLoading(true);
     if (silent) setSyncState('syncing');
@@ -101,9 +116,17 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     try {
       const response = await fetch(`/api/polls/${dbPollId}`, {
         cache: 'no-store',
-        headers: userFingerprint ? { 'x-user-fp': userFingerprint } : undefined,
+        headers: {
+          ...(userFingerprint ? { 'x-user-fp': userFingerprint } : {}),
+          'x-voter-id': voterId,
+        },
       });
-      const json = (await response.json()) as { poll?: DbPoll | null; comments?: CommentView[]; error?: string };
+      const json = (await response.json()) as {
+        poll?: DbPoll | null;
+        comments?: CommentView[];
+        viewerVote?: { optionIndex: number } | null;
+        error?: string;
+      };
 
       if (!response.ok) throw new Error(json.error ?? '투표 데이터 로딩 실패');
 
@@ -124,6 +147,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               participants: dbPoll.participants,
             }
           : null,
+        viewerVote: json.viewerVote ?? null,
         comments: dbComments.map((comment) => ({
           id: comment.id,
           parent_id: comment.parent_id,
@@ -173,6 +197,20 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         setPollData(null);
       }
 
+      const visibleOptions = officialPoll?.options ?? dbPoll?.options ?? [];
+      const selectedOptionIndex = json.viewerVote?.optionIndex;
+      if (
+        Number.isInteger(selectedOptionIndex)
+        && (selectedOptionIndex as number) >= 0
+        && (selectedOptionIndex as number) < visibleOptions.length
+      ) {
+        setVoted(true);
+        setChoice(visibleOptions[selectedOptionIndex as number]);
+      } else if (!silent) {
+        setVoted(false);
+        setChoice(null);
+      }
+
       setComments(dbComments);
       setSyncState('live');
     } catch (error) {
@@ -200,7 +238,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [dbPollId, officialPoll, userFingerprint]);
+  }, [dbPollId, officialPoll, userFingerprint, voterId]);
 
   const scheduleSilentRefresh = useCallback(() => {
     if (silentRefreshTimerRef.current) {
@@ -288,7 +326,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const reliability = getReliability(pollData.participants);
 
   const handleVote = async (idx: number) => {
-    if (voted) return;
+    if (voted || !voterId) return;
 
     const previousPoll = pollData;
     const optimisticVotes = [...pollData.votes];
@@ -303,13 +341,18 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       const response = await fetch(`/api/polls/${pollData.id}/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ optionIndex: idx }),
+        body: JSON.stringify({ optionIndex: idx, voterId }),
       });
 
       const json = (await response.json()) as { data?: IncrementVoteResponse; error?: string };
+      if (response.status === 409) {
+        await fetchAllData({ silent: true });
+        return;
+      }
       if (!response.ok || !json.data) throw new Error(json.error ?? '투표 반영 실패');
 
       setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
+      setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
       setBarWidths(calcPercentages(json.data.votes));
     } catch (error) {
       setPollData(previousPoll);

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabase-server";
+import { getSupabaseMutationClient } from "@/lib/supabase-server";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -40,7 +40,8 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: "parentId is too long." }, { status: 400 });
     }
 
-    const { data: poll, error: pollError } = await supabaseServer
+    const supabaseMutation = getSupabaseMutationClient();
+    const { data: poll, error: pollError } = await supabaseMutation
       .from("polls")
       .select("id")
       .eq("id", id)
@@ -55,7 +56,7 @@ export async function POST(request: Request, context: Context) {
     }
 
     if (parentId) {
-      const { data: parent, error: parentError } = await supabaseServer
+      const { data: parent, error: parentError } = await supabaseMutation
         .from("comments")
         .select("id")
         .eq("id", parentId)
@@ -81,7 +82,7 @@ export async function POST(request: Request, context: Context) {
       insertPayload.parent_id = parentId;
     }
 
-    const { data, error } = await supabaseServer
+    const { data, error } = await supabaseMutation
       .from("comments")
       .insert(insertPayload)
       .select("*")
