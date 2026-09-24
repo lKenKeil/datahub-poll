@@ -29,6 +29,7 @@ type IncrementVoteResponse = {
   votes: number[];
   participants: number;
   optionIndex: number;
+  changed?: boolean;
 };
 
 type CommentView = CommentRow & {
@@ -86,7 +87,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const dbPollId = officialPoll ? `official_${id}` : id;
 
   const [voted, setVoted] = useState(false);
+  const [isRevoting, setIsRevoting] = useState(false);
   const [choice, setChoice] = useState<string | null>(null);
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
   const [barWidths, setBarWidths] = useState<number[]>([]);
   const [comments, setComments] = useState<CommentView[]>([]);
   const [inputText, setInputText] = useState('');
@@ -206,9 +209,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       ) {
         setVoted(true);
         setChoice(visibleOptions[selectedOptionIndex as number]);
+        setSelectedOptionIndex(selectedOptionIndex as number);
       } else if (!silent) {
         setVoted(false);
         setChoice(null);
+        setSelectedOptionIndex(null);
       }
 
       setComments(dbComments);
@@ -333,6 +338,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     optimisticVotes[idx] += 1;
 
     setChoice(pollData.options[idx]);
+    setSelectedOptionIndex(idx);
     setVoted(true);
     setPollData({ ...pollData, votes: optimisticVotes, participants: pollData.participants + 1 });
     setTimeout(() => setBarWidths(calcPercentages(optimisticVotes)), 100);
@@ -353,13 +359,60 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
       setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
+      setSelectedOptionIndex(json.data.optionIndex);
       setBarWidths(calcPercentages(json.data.votes));
     } catch (error) {
       setPollData(previousPoll);
       setVoted(false);
       setChoice(null);
+      setSelectedOptionIndex(null);
       setBarWidths(calcPercentages(previousPoll.votes));
       alert(`투표 반영 실패: ${getErrorMessage(error)}`);
+    }
+  };
+
+  const handleRevote = async (idx: number) => {
+    if (!voted || !voterId || selectedOptionIndex === null) return;
+
+    if (idx === selectedOptionIndex) {
+      setIsRevoting(false);
+      return;
+    }
+
+    const previousPoll = pollData;
+    const previousChoice = choice;
+    const previousOptionIndex = selectedOptionIndex;
+    const optimisticVotes = [...pollData.votes];
+    optimisticVotes[previousOptionIndex] = Math.max(0, optimisticVotes[previousOptionIndex] - 1);
+    optimisticVotes[idx] += 1;
+
+    setChoice(pollData.options[idx]);
+    setSelectedOptionIndex(idx);
+    setIsRevoting(false);
+    setPollData({ ...pollData, votes: optimisticVotes });
+    setBarWidths(calcPercentages(optimisticVotes));
+
+    try {
+      const response = await fetch(`/api/polls/${pollData.id}/vote`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ optionIndex: idx, voterId }),
+      });
+
+      const json = (await response.json()) as { data?: IncrementVoteResponse; error?: string };
+      if (!response.ok || !json.data) throw new Error(json.error ?? '투표 변경 실패');
+
+      setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
+      setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
+      setSelectedOptionIndex(json.data.optionIndex);
+      setBarWidths(calcPercentages(json.data.votes));
+    } catch (error) {
+      setPollData(previousPoll);
+      setChoice(previousChoice);
+      setSelectedOptionIndex(previousOptionIndex);
+      setIsRevoting(true);
+      setBarWidths(calcPercentages(previousPoll.votes));
+      alert(`투표 변경 실패: ${getErrorMessage(error)}`);
     }
   };
 
@@ -494,13 +547,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         </header>
 
         <section className="relative">
-          {!voted ? (
+          {!voted || isRevoting ? (
             <div className="grid gap-4">
               {pollData.options.map((opt, i) => (
-                <button key={opt} onClick={() => handleVote(i)} className="group w-full p-6 text-left bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl hover:border-blue-500/50 hover:bg-slate-100 dark:hover:bg-white/10 transition-all duration-300">
+                <button key={opt} onClick={() => (isRevoting ? handleRevote(i) : handleVote(i))} className={`group w-full p-6 text-left bg-white dark:bg-white/5 border rounded-2xl hover:border-blue-500/50 hover:bg-slate-100 dark:hover:bg-white/10 transition-all duration-300 ${isRevoting && selectedOptionIndex === i ? 'border-blue-500/60' : 'border-slate-200 dark:border-white/10'}`}>
                   <div className="flex justify-between items-center font-bold text-lg">
                     <span>{opt}</span>
-                    <span className="opacity-0 group-hover:opacity-100 text-blue-500 transition-opacity text-sm">VOTE →</span>
+                    <span className={`${isRevoting && selectedOptionIndex === i ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} text-blue-500 transition-opacity text-sm`}>{isRevoting && selectedOptionIndex === i ? 'CURRENT' : 'VOTE →'}</span>
                   </div>
                 </button>
               ))}
@@ -509,7 +562,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
             <div className="bg-white dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 rounded-[2.5rem] p-10 space-y-8 shadow-2xl">
               <div className="flex justify-between items-end">
                 <h3 className="text-xl font-black text-slate-900 dark:text-white italic tracking-tighter">DATA ANALYSIS</h3>
-                <span className="text-blue-500 font-black text-xs">SELECTED: {choice}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-blue-500 font-black text-xs">SELECTED: {choice}</span>
+                  <button type="button" onClick={() => setIsRevoting(true)} className="rounded-full border border-blue-500/30 px-3 py-1 text-[10px] font-black text-blue-400 transition-colors hover:border-blue-400 hover:text-blue-300">다시 투표하기</button>
+                </div>
               </div>
               <div className="space-y-6">
                 {pollData.options.map((opt, i) => (
