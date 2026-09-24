@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server";
 import { PollCategory } from "@/lib/types";
+import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 
 const validCategories = new Set<PollCategory>(["학술/통계", "IT/테크", "사회/경제", "라이프스타일", "커뮤니티"]);
 
@@ -24,6 +25,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const rateLimitResponse = enforceRateLimit(request, RATE_LIMIT_POLICIES.pollCreate);
+  if (rateLimitResponse) return rateLimitResponse;
+
   try {
     let raw: Record<string, unknown>;
     try {

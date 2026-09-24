@@ -39,6 +39,13 @@ type CommentView = CommentRow & {
   user_reaction: 'like' | 'dislike' | null;
 };
 
+class ApiResponseError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = 'ApiResponseError';
+  }
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
@@ -95,6 +102,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [inputText, setInputText] = useState('');
   const [replyText, setReplyText] = useState('');
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
   const [pollData, setPollData] = useState<ViewPoll | null>(null);
   const [isOfficial, setIsOfficial] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -332,6 +340,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
   const handleVote = async (idx: number) => {
     if (voted || !voterId) return;
+    setActionError('');
 
     const previousPoll = pollData;
     const optimisticVotes = [...pollData.votes];
@@ -355,7 +364,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         await fetchAllData({ silent: true });
         return;
       }
-      if (!response.ok || !json.data) throw new Error(json.error ?? '투표 반영 실패');
+      if (!response.ok || !json.data) throw new ApiResponseError(json.error ?? '투표 반영 실패', response.status);
 
       setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
@@ -367,12 +376,17 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setChoice(null);
       setSelectedOptionIndex(null);
       setBarWidths(calcPercentages(previousPoll.votes));
-      alert(`투표 반영 실패: ${getErrorMessage(error)}`);
+      if (error instanceof ApiResponseError && error.status === 429) {
+        setActionError(error.message);
+      } else {
+        alert(`투표 반영 실패: ${getErrorMessage(error)}`);
+      }
     }
   };
 
   const handleRevote = async (idx: number) => {
     if (!voted || !voterId || selectedOptionIndex === null) return;
+    setActionError('');
 
     if (idx === selectedOptionIndex) {
       setIsRevoting(false);
@@ -400,7 +414,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       });
 
       const json = (await response.json()) as { data?: IncrementVoteResponse; error?: string };
-      if (!response.ok || !json.data) throw new Error(json.error ?? '투표 변경 실패');
+      if (!response.ok || !json.data) throw new ApiResponseError(json.error ?? '투표 변경 실패', response.status);
 
       setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
@@ -412,13 +426,18 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setSelectedOptionIndex(previousOptionIndex);
       setIsRevoting(true);
       setBarWidths(calcPercentages(previousPoll.votes));
-      alert(`투표 변경 실패: ${getErrorMessage(error)}`);
+      if (error instanceof ApiResponseError && error.status === 429) {
+        setActionError(error.message);
+      } else {
+        alert(`투표 변경 실패: ${getErrorMessage(error)}`);
+      }
     }
   };
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim()) return;
+    setActionError('');
 
     try {
       const response = await fetch(`/api/polls/${pollData.id}/comments`, {
@@ -431,17 +450,22 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       });
 
       const json = (await response.json()) as { data?: CommentView; error?: string };
-      if (!response.ok || !json.data) throw new Error(json.error ?? '댓글 등록 실패');
+      if (!response.ok || !json.data) throw new ApiResponseError(json.error ?? '댓글 등록 실패', response.status);
 
       setComments((prev) => [{ ...json.data!, parent_id: null, like_count: 0, dislike_count: 0, user_reaction: null }, ...prev]);
       setInputText('');
     } catch (error) {
-      alert(`댓글 등록 실패: ${getErrorMessage(error)}`);
+      if (error instanceof ApiResponseError && error.status === 429) {
+        setActionError(error.message);
+      } else {
+        alert(`댓글 등록 실패: ${getErrorMessage(error)}`);
+      }
     }
   };
 
   const handleReplySubmit = async (parentId: string) => {
     if (!replyText.trim()) return;
+    setActionError('');
 
     try {
       const response = await fetch(`/api/polls/${pollData.id}/comments`, {
@@ -454,7 +478,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       });
 
       const json = (await response.json()) as { data?: CommentView; error?: string };
-      if (!response.ok || !json.data) throw new Error(json.error ?? '답글 등록 실패');
+      if (!response.ok || !json.data) throw new ApiResponseError(json.error ?? '답글 등록 실패', response.status);
 
       setComments((prev) => [
         { ...json.data!, parent_id: parentId, like_count: 0, dislike_count: 0, user_reaction: null },
@@ -463,11 +487,16 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setReplyText('');
       setReplyTargetId(null);
     } catch (error) {
-      alert(`답글 등록 실패: ${getErrorMessage(error)}`);
+      if (error instanceof ApiResponseError && error.status === 429) {
+        setActionError(error.message);
+      } else {
+        alert(`답글 등록 실패: ${getErrorMessage(error)}`);
+      }
     }
   };
 
   const handleReaction = async (commentId: string, reaction: 'like' | 'dislike') => {
+    setActionError('');
     try {
       const target = comments.find((comment) => String(comment.id) === commentId);
       const nextReaction = target?.user_reaction === reaction ? null : reaction;
@@ -480,7 +509,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
       const json = (await response.json()) as { likeCount?: number; dislikeCount?: number; userReaction?: 'like' | 'dislike' | null; error?: string };
 
-      if (!response.ok) throw new Error(json.error ?? '반응 처리 실패');
+      if (!response.ok) throw new ApiResponseError(json.error ?? '반응 처리 실패', response.status);
 
       setComments((prev) =>
         prev.map((comment) =>
@@ -495,7 +524,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         ),
       );
     } catch (error) {
-      alert(`공감 반영 실패: ${getErrorMessage(error)}`);
+      if (error instanceof ApiResponseError && error.status === 429) {
+        setActionError(error.message);
+      } else {
+        alert(`공감 반영 실패: ${getErrorMessage(error)}`);
+      }
     }
   };
 
@@ -545,6 +578,12 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
             </div>
           ) : null}
         </header>
+
+        {actionError ? (
+          <div role="alert" className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-center text-sm font-bold text-amber-300">
+            {actionError}
+          </div>
+        ) : null}
 
         <section className="relative">
           {!voted || isRevoting ? (

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { isValidVoterId } from "@/lib/voter-id";
+import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -10,6 +11,9 @@ type VoteBody = {
 };
 
 export async function POST(request: Request, context: Context) {
+  const rateLimitResponse = enforceRateLimit(request, RATE_LIMIT_POLICIES.voteMutation);
+  if (rateLimitResponse) return rateLimitResponse;
+
   try {
     const { id } = await context.params;
     if (!id.trim() || id.length > 200) {
@@ -106,6 +110,9 @@ export async function POST(request: Request, context: Context) {
 }
 
 export async function PATCH(request: Request, context: Context) {
+  const rateLimitResponse = enforceRateLimit(request, RATE_LIMIT_POLICIES.voteMutation);
+  if (rateLimitResponse) return rateLimitResponse;
+
   try {
     const { id } = await context.params;
     if (!id.trim() || id.length > 200) {
