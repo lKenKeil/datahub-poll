@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PollCategory } from '@/lib/types';
+import { storePollOwnerToken } from '@/lib/poll-owner-storage';
 
 type InterestCategory =
   | '연애·관계'
@@ -29,6 +30,11 @@ type PollOptionDraft = {
   text: string;
   imageFile: File | null;
   previewUrl: string | null;
+};
+
+type OwnerTokenFallback = {
+  pollId: string;
+  ownerToken: string;
 };
 
 const CATEGORY_OPTIONS: InterestCategoryOption[] = [
@@ -71,6 +77,8 @@ export default function CreatePollPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeImageOptionKey, setActiveImageOptionKey] = useState<number | null>(null);
+  const [ownerTokenFallback, setOwnerTokenFallback] = useState<OwnerTokenFallback | null>(null);
+  const [ownerTokenCopyMessage, setOwnerTokenCopyMessage] = useState('');
 
   const trimmedTitle = title.trim();
   const trimmedOptions = useMemo(() => options.map((option) => option.text.trim()), [options]);
@@ -232,9 +240,46 @@ export default function CreatePollPage() {
     optionsRef.current = optionsRef.current.map((option) => ({ ...option, previewUrl: null }));
   };
 
+  const copyFallbackOwnerToken = async () => {
+    if (!ownerTokenFallback) return;
+    setOwnerTokenCopyMessage('');
+
+    try {
+      let copied = false;
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(ownerTokenFallback.ownerToken);
+          copied = true;
+        } catch {
+          // Continue to the DOM copy fallback when Clipboard API access is denied.
+        }
+      }
+
+      if (!copied) {
+        const textarea = document.createElement('textarea');
+        textarea.value = ownerTokenFallback.ownerToken;
+        textarea.readOnly = true;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+          copied = document.execCommand('copy');
+        } finally {
+          textarea.remove();
+        }
+      }
+
+      if (!copied) throw new Error('Clipboard copy failed.');
+      setOwnerTokenCopyMessage('관리 키를 복사했어요. 안전한 곳에 보관해주세요.');
+    } catch {
+      setOwnerTokenCopyMessage('복사하지 못했습니다. 위 관리 키를 직접 복사해주세요.');
+    }
+  };
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (submissionInFlight.current) return;
+    if (submissionInFlight.current || ownerTokenFallback) return;
     setErrorMessage('');
 
     if (validationMessage || !selectedCategory) {
@@ -279,7 +324,10 @@ export default function CreatePollPage() {
       }
 
       const response = await fetch('/api/polls', requestInit);
-      const json = (await response.json()) as { data?: { id?: string }; error?: string };
+      const json = (await response.json()) as {
+        data?: { id?: string; ownerToken?: string };
+        error?: string;
+      };
 
       if (!response.ok) {
         setErrorMessage(
@@ -291,8 +339,17 @@ export default function CreatePollPage() {
       }
 
       const createdPollId = json.data?.id;
-      if (!createdPollId) {
-        setErrorMessage('투표는 생성됐지만 상세 화면으로 이동하지 못했어요. 홈에서 투표를 확인해주세요.');
+      const ownerToken = json.data?.ownerToken;
+      if (!createdPollId || !ownerToken) {
+        setErrorMessage('투표 관리 권한 정보를 확인하지 못했습니다. 관리자에게 문의해주세요.');
+        return;
+      }
+
+      try {
+        storePollOwnerToken(createdPollId, ownerToken);
+      } catch {
+        setOwnerTokenFallback({ pollId: createdPollId, ownerToken });
+        setErrorMessage('이 브라우저에 수정·삭제 권한을 저장하지 못했습니다.');
         return;
       }
 
@@ -616,9 +673,43 @@ export default function CreatePollPage() {
               </div>
             ) : null}
 
+            {ownerTokenFallback ? (
+              <section className="rounded-2xl border border-amber-400/40 bg-amber-50 p-4 dark:bg-amber-500/10" aria-labelledby="owner-token-fallback-title">
+                <h2 id="owner-token-fallback-title" className="text-sm font-black text-amber-900 dark:text-amber-200">관리 키를 직접 보관해주세요</h2>
+                <p className="mt-2 text-xs font-semibold leading-relaxed text-amber-800/80 dark:text-amber-100/70">
+                  이 키를 잃으면 로그인 없이 투표 관리 권한을 복구할 수 없습니다. 다른 사람에게 공유하지 마세요.
+                </p>
+                <code className="mt-3 block break-all rounded-xl border border-amber-300/60 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-amber-500/20 dark:bg-slate-950 dark:text-slate-100">
+                  {ownerTokenFallback.ownerToken}
+                </code>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyFallbackOwnerToken()}
+                    className="min-h-11 rounded-xl bg-amber-500 px-4 text-sm font-black text-slate-950 transition hover:bg-amber-400"
+                  >
+                    관리 키 복사
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      releaseAllPreviewUrls();
+                      router.push(`/vote/${encodeURIComponent(ownerTokenFallback.pollId)}`);
+                    }}
+                    className="min-h-11 rounded-xl border border-amber-400 px-4 text-sm font-black text-amber-800 transition hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                  >
+                    투표 페이지로 이동
+                  </button>
+                </div>
+                <p role="status" aria-live="polite" className="mt-2 min-h-5 text-xs font-bold text-amber-800 dark:text-amber-200">
+                  {ownerTokenCopyMessage}
+                </p>
+              </section>
+            ) : null}
+
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || Boolean(ownerTokenFallback)}
               aria-busy={isSubmitting}
               className="min-h-14 w-full rounded-2xl bg-blue-600 px-5 py-4 text-lg font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60"
             >

@@ -16,10 +16,13 @@ import {
   validateAndEncodeOptionImage,
   type ValidatedOptionImage,
 } from "@/lib/poll-option-images";
+import { createPollOwnerCredential } from "@/lib/poll-owner-token";
 
 const validCategories = new Set<PollCategory>(["학술/통계", "IT/테크", "사회/경제", "라이프스타일", "커뮤니티"]);
 const MAX_MULTIPART_REQUEST_BYTES = 4_400_000;
 const OPTION_IMAGE_FIELD_PATTERN = /^optionImages\[(0|[1-9][0-9]*)\]$/;
+const OWNERSHIP_MIGRATION_ERROR_MESSAGE =
+  "투표 소유권 설정이 아직 적용되지 않았습니다. 관리자에게 문의해주세요.";
 
 export const runtime = "nodejs";
 
@@ -39,6 +42,18 @@ class PollCreateRequestError extends Error {
     this.name = "PollCreateRequestError";
     this.status = status;
   }
+}
+
+function isOwnershipMigrationMissing(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const errorRecord = error as Record<string, unknown>;
+  const code = typeof errorRecord.code === "string" ? errorRecord.code : "";
+  const message = typeof errorRecord.message === "string" ? errorRecord.message : "";
+  return (
+    code === "PGRST202"
+    || ((code === "42883" || code === "42P01")
+      && (message.includes("create_owned_poll") || message.includes("poll_ownership")))
+  );
 }
 
 function getOneFormString(formData: FormData, fieldName: string): string;
@@ -263,6 +278,7 @@ export async function POST(request: Request) {
     }
 
     const id = `custom_${randomUUID()}`;
+    const ownerCredential = createPollOwnerCredential();
 
     const insertPayload: Record<string, unknown> = {
       id,
@@ -295,31 +311,44 @@ export async function POST(request: Request) {
       insertPayload.option_image_paths = optionImagePaths;
     }
 
-    let { error } = await supabaseMutation.from("polls").insert(insertPayload);
-
-    // Backward-compatible path for DBs where `official_fact` column has not been migrated yet.
-    if (error?.message?.includes("official_fact")) {
-      delete insertPayload.official_fact;
-      const retry = await supabaseMutation.from("polls").insert(insertPayload);
-      error = retry.error;
-    }
+    const { error } = await supabaseMutation.rpc("create_owned_poll", {
+      p_poll_id: id,
+      p_title: rawTitle,
+      p_category: rawCategory,
+      p_options: rawOptions,
+      p_votes: insertPayload.votes,
+      p_participants: insertPayload.participants,
+      p_official_fact: officialFact || null,
+      p_option_image_paths: insertPayload.option_image_paths ?? null,
+      p_owner_token_hash: ownerCredential.hash,
+    });
 
     if (error) {
-      logPublicMutationError("poll-create-db-insert", error);
+      logPublicMutationError("poll-create-owned-rpc", error);
       const cleanupError = await removePollOptionImages(supabaseMutation, uploadedPaths);
       uploadedPaths = [];
       if (cleanupError) {
         logPublicMutationError("poll-create-db-failure-cleanup", cleanupError);
       }
-      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
+      return NextResponse.json(
+        {
+          code: isOwnershipMigrationMissing(error) ? "POLL_OWNERSHIP_MIGRATION_REQUIRED" : undefined,
+          error: isOwnershipMigrationMissing(error)
+            ? OWNERSHIP_MIGRATION_ERROR_MESSAGE
+            : PUBLIC_INTERNAL_ERROR_MESSAGE,
+        },
+        { status: isOwnershipMigrationMissing(error) ? 503 : 500 },
+      );
     }
 
     pollInserted = true;
     return NextResponse.json({
       ok: true,
       data: uploadedPaths.length > 0
-        ? { id, option_image_paths: insertPayload.option_image_paths }
-        : { id },
+        ? { id, ownerToken: ownerCredential.token, option_image_paths: insertPayload.option_image_paths }
+        : { id, ownerToken: ownerCredential.token },
+    }, {
+      headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
     const pathsToClean = error instanceof PollOptionImageStorageError
