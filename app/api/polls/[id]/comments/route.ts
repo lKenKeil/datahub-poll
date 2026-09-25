@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
+import {
+  getUnsafeTextInputMessage,
+  hasUnsafeInputControlCharacters,
+  logPublicMutationError,
+  PUBLIC_INTERNAL_ERROR_MESSAGE,
+} from "@/lib/public-api-hardening";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -15,7 +21,7 @@ export async function POST(request: Request, context: Context) {
 
   try {
     const { id } = await context.params;
-    if (!id.trim() || id.length > 200) {
+    if (!id.trim() || id.length > 200 || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid poll id." }, { status: 400 });
     }
 
@@ -30,16 +36,25 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: "comment text is required." }, { status: 400 });
     }
 
+    if (body.parentId !== undefined && body.parentId !== null && typeof body.parentId !== "string") {
+      return NextResponse.json({ error: "parentId must be a string or null." }, { status: 400 });
+    }
+
+    const rawParentId = typeof body.parentId === "string" ? body.parentId : "";
+    const unsafeInputMessage = getUnsafeTextInputMessage([
+      { label: "댓글", value: body.text },
+      { label: "답글 대상", value: rawParentId },
+    ]);
+    if (unsafeInputMessage) {
+      return NextResponse.json({ error: unsafeInputMessage }, { status: 400 });
+    }
+
     const text = body.text.trim();
     if (!text || text.length > 2000) {
       return NextResponse.json({ error: "comment text must be 1-2000 chars." }, { status: 400 });
     }
 
-    if (body.parentId !== undefined && body.parentId !== null && typeof body.parentId !== "string") {
-      return NextResponse.json({ error: "parentId must be a string or null." }, { status: 400 });
-    }
-
-    const parentId = typeof body.parentId === "string" ? body.parentId.trim() : "";
+    const parentId = rawParentId.trim();
     if (parentId.length > 200) {
       return NextResponse.json({ error: "parentId is too long." }, { status: 400 });
     }
@@ -52,7 +67,8 @@ export async function POST(request: Request, context: Context) {
       .maybeSingle();
 
     if (pollError) {
-      return NextResponse.json({ error: pollError.message }, { status: 500 });
+      logPublicMutationError("comment-create-poll-read", pollError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     if (!poll) {
@@ -68,7 +84,8 @@ export async function POST(request: Request, context: Context) {
         .maybeSingle();
 
       if (parentError) {
-        return NextResponse.json({ error: parentError.message }, { status: 500 });
+        logPublicMutationError("comment-create-parent-read", parentError);
+        return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
       }
 
       if (!parent) {
@@ -93,12 +110,13 @@ export async function POST(request: Request, context: Context) {
       .single();
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      logPublicMutationError("comment-create-db-insert", error);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     return NextResponse.json({ data });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: `comments API failed: ${message}` }, { status: 500 });
+    logPublicMutationError("comment-create-unexpected", error);
+    return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
   }
 }

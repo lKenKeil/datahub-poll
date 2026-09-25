@@ -4,14 +4,14 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 import {
-  POLL_OPTION_IMAGES_BUCKET,
   removePollOptionImages,
 } from "@/lib/poll-option-image-cleanup";
+import { POLL_OPTION_IMAGES_BUCKET } from "@/lib/poll-option-image-paths";
 
 export {
-  POLL_OPTION_IMAGES_BUCKET,
   removePollOptionImages,
 } from "@/lib/poll-option-image-cleanup";
+export { POLL_OPTION_IMAGES_BUCKET } from "@/lib/poll-option-image-paths";
 export const MAX_OPTION_IMAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_OPTION_IMAGE_WIDTH = 4096;
 export const MAX_OPTION_IMAGE_HEIGHT = 4096;

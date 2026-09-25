@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
+import {
+  getUnsafeTextInputMessage,
+  hasUnsafeInputControlCharacters,
+  logPublicMutationError,
+  PUBLIC_INTERNAL_ERROR_MESSAGE,
+} from "@/lib/public-api-hardening";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -15,7 +21,7 @@ export async function POST(request: Request, context: Context) {
 
   try {
     const { id } = await context.params;
-    if (!id.trim() || id.length > 200) {
+    if (!id.trim() || id.length > 200 || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid comment id." }, { status: 400 });
     }
 
@@ -26,7 +32,15 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: "invalid JSON body." }, { status: 400 });
     }
 
-    const userFingerprint = typeof body.userFingerprint === "string" ? body.userFingerprint.trim() : "";
+    const rawUserFingerprint = typeof body.userFingerprint === "string" ? body.userFingerprint : "";
+    const unsafeInputMessage = getUnsafeTextInputMessage([
+      { label: "사용자 식별값", value: rawUserFingerprint },
+    ]);
+    if (unsafeInputMessage) {
+      return NextResponse.json({ error: unsafeInputMessage }, { status: 400 });
+    }
+
+    const userFingerprint = rawUserFingerprint.trim();
     if (!userFingerprint || userFingerprint.length > 200) {
       return NextResponse.json({ error: "userFingerprint must be 1-200 chars." }, { status: 400 });
     }
@@ -43,7 +57,8 @@ export async function POST(request: Request, context: Context) {
       .maybeSingle();
 
     if (commentError) {
-      return NextResponse.json({ error: commentError.message }, { status: 500 });
+      logPublicMutationError("comment-reaction-comment-read", commentError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     if (!comment) {
@@ -58,7 +73,8 @@ export async function POST(request: Request, context: Context) {
         .eq("user_fingerprint", userFingerprint);
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        logPublicMutationError("comment-reaction-delete", error);
+        return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
       }
     } else {
       const { error } = await supabaseMutation.from("comment_reactions").upsert(
@@ -71,7 +87,8 @@ export async function POST(request: Request, context: Context) {
       );
 
       if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+        logPublicMutationError("comment-reaction-upsert", error);
+        return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
       }
     }
 
@@ -81,7 +98,8 @@ export async function POST(request: Request, context: Context) {
       .eq("comment_id", id);
 
     if (countError) {
-      return NextResponse.json({ error: countError.message }, { status: 500 });
+      logPublicMutationError("comment-reaction-count", countError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     const rows = (reactions ?? []) as Array<{ reaction: "like" | "dislike"; user_fingerprint: string }>;
@@ -91,7 +109,7 @@ export async function POST(request: Request, context: Context) {
 
     return NextResponse.json({ likeCount, dislikeCount, userReaction: my });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: `reaction API failed: ${message}` }, { status: 500 });
+    logPublicMutationError("comment-reaction-unexpected", error);
+    return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
   }
 }

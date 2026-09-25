@@ -1,9 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  getValidatedPollOptionImagePath,
+  POLL_OPTION_IMAGES_BUCKET,
+} from "@/lib/poll-option-image-paths";
 
-export const POLL_OPTION_IMAGES_BUCKET = "poll-option-images";
-
-const STORED_OPTION_IMAGE_FILE_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/i;
+export { POLL_OPTION_IMAGES_BUCKET } from "@/lib/poll-option-image-paths";
 
 export function getPollOptionImagePathsForDeletion(
   pollId: string,
@@ -16,20 +17,12 @@ export function getPollOptionImagePathsForDeletion(
   const validPaths = new Set<string>();
 
   optionImagePaths.forEach((value, optionIndex) => {
-    if (typeof value !== "string") return;
-
-    const pathParts = value.split("/");
-    if (
-      pathParts.length !== 4
-      || pathParts[0] !== pollId
-      || pathParts[1] !== "options"
-      || pathParts[2] !== String(optionIndex)
-      || !STORED_OPTION_IMAGE_FILE_PATTERN.test(pathParts[3])
-    ) {
-      return;
-    }
-
-    validPaths.add(value);
+    const path = getValidatedPollOptionImagePath(
+      pollId,
+      optionIndex,
+      typeof value === "string" ? value : null,
+    );
+    if (path) validPaths.add(path);
   });
 
   return [...validPaths];

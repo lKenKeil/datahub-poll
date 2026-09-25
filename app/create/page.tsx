@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -58,6 +58,7 @@ export default function CreatePollPage() {
   const submissionInFlight = useRef(false);
   const nextOptionKeyRef = useRef(2);
   const imageInputRefs = useRef(new Map<number, HTMLInputElement>());
+  const activeImageOptionKeyRef = useRef<number | null>(null);
 
   const [title, setTitle] = useState('');
   const [interestCategory, setInterestCategory] = useState<InterestCategory | null>(null);
@@ -69,6 +70,7 @@ export default function CreatePollPage() {
   const [description, setDescription] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeImageOptionKey, setActiveImageOptionKey] = useState<number | null>(null);
 
   const trimmedTitle = title.trim();
   const trimmedOptions = useMemo(() => options.map((option) => option.text.trim()), [options]);
@@ -114,6 +116,11 @@ export default function CreatePollPage() {
     if (errorMessage) setErrorMessage('');
   };
 
+  const activateImageTarget = (optionKey: number) => {
+    activeImageOptionKeyRef.current = optionKey;
+    setActiveImageOptionKey(optionKey);
+  };
+
   const handleOptionChange = (index: number, value: string) => {
     clearError();
     updateOptions((previous) => previous.map((option, optionIndex) => (
@@ -137,6 +144,10 @@ export default function CreatePollPage() {
     clearError();
     const removed = optionsRef.current[index];
     if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+    if (removed?.key === activeImageOptionKeyRef.current) {
+      activeImageOptionKeyRef.current = null;
+      setActiveImageOptionKey(null);
+    }
     updateOptions((previous) => previous.filter((_, optionIndex) => optionIndex !== index));
   };
 
@@ -152,9 +163,15 @@ export default function CreatePollPage() {
     )));
   };
 
-  const handleOptionImage = (index: number, file: File | undefined) => {
+  const setImageForOption = useCallback((optionKey: number, file: File | null | undefined) => {
     if (!file || isSubmitting) return;
-    clearError();
+    setErrorMessage('');
+
+    const currentIndex = optionsRef.current.findIndex((option) => option.key === optionKey);
+    if (currentIndex < 0) {
+      setErrorMessage('이미지를 넣을 선택지를 먼저 선택해주세요.');
+      return;
+    }
 
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
       setErrorMessage('JPG, PNG, WebP 이미지만 추가할 수 있어요. GIF와 SVG는 지원하지 않아요.');
@@ -165,19 +182,48 @@ export default function CreatePollPage() {
       return;
     }
 
-    const current = optionsRef.current[index];
-    const nextTotalBytes = selectedImageBytes - (current?.imageFile?.size ?? 0) + file.size;
+    const current = optionsRef.current[currentIndex];
+    const currentTotalBytes = optionsRef.current.reduce(
+      (total, option) => total + (option.imageFile?.size ?? 0),
+      0,
+    );
+    const nextTotalBytes = currentTotalBytes - (current.imageFile?.size ?? 0) + file.size;
     if (nextTotalBytes > MAX_MULTIPART_BYTES) {
       setErrorMessage('이미지 전체 용량이 너무 큽니다. 파일 크기를 줄여주세요.');
       return;
     }
 
     const previewUrl = URL.createObjectURL(file);
-    if (current?.previewUrl) URL.revokeObjectURL(current.previewUrl);
+    if (current.previewUrl) URL.revokeObjectURL(current.previewUrl);
     updateOptions((previous) => previous.map((option, optionIndex) => (
-      optionIndex === index ? { ...option, imageFile: file, previewUrl } : option
+      optionIndex === currentIndex ? { ...option, imageFile: file, previewUrl } : option
     )));
-  };
+  }, [isSubmitting]);
+
+  useEffect(() => {
+    const handlePaste = (event: ClipboardEvent) => {
+      if (isSubmitting) return;
+
+      const clipboardItems = Array.from(event.clipboardData?.items ?? []);
+      const imageItem = clipboardItems.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
+      const imageFile = imageItem?.getAsFile()
+        ?? Array.from(event.clipboardData?.files ?? []).find((file) => file.type.startsWith('image/'));
+
+      if (!imageFile) return;
+      event.preventDefault();
+
+      const optionKey = activeImageOptionKeyRef.current;
+      if (optionKey === null || !optionsRef.current.some((option) => option.key === optionKey)) {
+        setErrorMessage('이미지를 넣을 선택지를 먼저 선택해주세요.');
+        return;
+      }
+
+      setImageForOption(optionKey, imageFile);
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [isSubmitting, setImageForOption]);
 
   const releaseAllPreviewUrls = () => {
     for (const option of optionsRef.current) {
@@ -354,13 +400,29 @@ export default function CreatePollPage() {
 
               <div className="mt-6 grid gap-4">
                 {options.map((option, index) => (
-                  <div key={option.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-white/[0.025] sm:p-4">
+                  <div
+                    key={option.key}
+                    onPointerDown={() => activateImageTarget(option.key)}
+                    onFocusCapture={() => activateImageTarget(option.key)}
+                    className={`rounded-2xl border bg-slate-50 p-3 transition dark:bg-white/[0.025] sm:p-4 ${
+                      activeImageOptionKey === option.key
+                        ? 'border-blue-400 ring-2 ring-blue-500/10 dark:border-blue-400/70'
+                        : 'border-slate-200 dark:border-white/10'
+                    }`}
+                  >
                     <div className="mb-2 flex items-center justify-between gap-3">
                       <label htmlFor={`poll-option-${index}`} className="flex items-center gap-2 text-sm font-black text-slate-700 dark:text-slate-200">
                         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-xs text-blue-600 dark:text-blue-300">{index + 1}</span>
                         선택지 {index + 1}
                       </label>
-                      <span className="text-[11px] font-semibold text-slate-400">{option.text.length}/{MAX_OPTION_LENGTH}</span>
+                      <div className="flex items-center gap-2">
+                        {activeImageOptionKey === option.key ? (
+                          <span className="hidden rounded-full bg-blue-100 px-2 py-1 text-[10px] font-black text-blue-600 dark:bg-blue-500/15 dark:text-blue-300 sm:inline-flex">
+                            여기에 붙여넣기
+                          </span>
+                        ) : null}
+                        <span className="text-[11px] font-semibold text-slate-400">{option.text.length}/{MAX_OPTION_LENGTH}</span>
+                      </div>
                     </div>
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
                       <input
@@ -395,14 +457,18 @@ export default function CreatePollPage() {
                       tabIndex={-1}
                       disabled={isSubmitting}
                       onChange={(event) => {
-                        handleOptionImage(index, event.currentTarget.files?.[0]);
+                        setImageForOption(option.key, event.currentTarget.files?.[0]);
                         event.currentTarget.value = '';
                       }}
                       aria-label={`선택지 ${index + 1} 이미지 파일`}
                     />
 
                     {option.previewUrl ? (
-                      <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/5">
+                      <div
+                        className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/5"
+                        tabIndex={0}
+                        aria-label={`선택지 ${index + 1} 이미지 영역. 붙여넣거나 파일을 선택할 수 있습니다.`}
+                      >
                         <div className="relative aspect-[4/3] max-h-64 w-full overflow-hidden bg-slate-200 dark:bg-slate-900">
                           <Image
                             src={option.previewUrl}
@@ -413,36 +479,43 @@ export default function CreatePollPage() {
                             className="object-cover"
                           />
                         </div>
-                        <div className="flex flex-col gap-2 p-3 sm:flex-row">
-                          <button
-                            type="button"
-                            onClick={() => imageInputRefs.current.get(option.key)?.click()}
-                            disabled={isSubmitting}
-                            aria-label={`선택지 ${index + 1} 이미지 변경`}
-                            className="min-h-11 flex-1 rounded-xl border border-blue-300 px-4 text-sm font-black text-blue-600 transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:text-blue-300 dark:hover:bg-blue-500/10"
-                          >
-                            이미지 변경
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeOptionImage(index)}
-                            disabled={isSubmitting}
-                            aria-label={`선택지 ${index + 1} 이미지 삭제`}
-                            className="min-h-11 flex-1 rounded-xl border border-rose-300 px-4 text-sm font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
-                          >
-                            이미지 삭제
-                          </button>
+                        <div className="p-3">
+                          <p className="mb-2 hidden text-center text-xs font-semibold text-slate-400 sm:block">Ctrl+V 또는 Cmd+V로 이미지를 붙여넣을 수 있어요.</p>
+                          <div className="flex flex-col gap-2 sm:flex-row">
+                            <button
+                              type="button"
+                              onClick={() => imageInputRefs.current.get(option.key)?.click()}
+                              disabled={isSubmitting}
+                              aria-label={`선택지 ${index + 1} 이미지 변경`}
+                              className="min-h-11 flex-1 rounded-xl border border-blue-300 px-4 text-sm font-black text-blue-600 transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:text-blue-300 dark:hover:bg-blue-500/10"
+                            >
+                              이미지 변경
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeOptionImage(index)}
+                              disabled={isSubmitting}
+                              aria-label={`선택지 ${index + 1} 이미지 삭제`}
+                              className="min-h-11 flex-1 rounded-xl border border-rose-300 px-4 text-sm font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-wait disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10"
+                            >
+                              이미지 삭제
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ) : (
                       <button
                         type="button"
-                        onClick={() => imageInputRefs.current.get(option.key)?.click()}
+                        onClick={() => {
+                          imageInputRefs.current.get(option.key)?.click();
+                        }}
                         disabled={isSubmitting}
-                        aria-label={`선택지 ${index + 1} 이미지 추가`}
-                        className="mt-3 min-h-11 w-full rounded-xl border border-dashed border-blue-300 bg-white px-4 text-sm font-black text-blue-600 transition hover:border-blue-500 hover:bg-blue-50 disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:bg-white/[0.025] dark:text-blue-300 dark:hover:bg-blue-500/10"
+                        aria-label={`선택지 ${index + 1} 이미지 영역. 붙여넣거나 파일을 선택할 수 있습니다.`}
+                        className="mt-3 min-h-16 w-full rounded-xl border border-dashed border-blue-300 bg-white px-4 py-3 text-sm font-black text-blue-600 transition hover:border-blue-500 hover:bg-blue-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:bg-white/[0.025] dark:text-blue-300 dark:hover:bg-blue-500/10"
                       >
-                        + 이미지 추가
+                        <span className="block">+ 이미지 추가</span>
+                        <span className="mt-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">이미지를 붙여넣거나 파일을 선택하세요</span>
+                        <span className="mt-1 hidden text-[11px] font-semibold text-slate-400 sm:block">Ctrl+V 또는 Cmd+V로 이미지 붙여넣기</span>
                       </button>
                     )}
                   </div>

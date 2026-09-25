@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { isValidVoterId } from "@/lib/voter-id";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
+import {
+  hasUnsafeInputControlCharacters,
+  logPublicMutationError,
+  PUBLIC_INTERNAL_ERROR_MESSAGE,
+} from "@/lib/public-api-hardening";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -16,7 +21,7 @@ export async function POST(request: Request, context: Context) {
 
   try {
     const { id } = await context.params;
-    if (!id.trim() || id.length > 200) {
+    if (!id.trim() || id.length > 200 || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid poll id." }, { status: 400 });
     }
 
@@ -45,7 +50,8 @@ export async function POST(request: Request, context: Context) {
       .maybeSingle();
 
     if (pollError) {
-      return NextResponse.json({ error: pollError.message }, { status: 500 });
+      logPublicMutationError("vote-create-poll-read", pollError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     if (!poll) {
@@ -86,12 +92,17 @@ export async function POST(request: Request, context: Context) {
       if (rpcError.code === "23505") {
         return NextResponse.json({ error: "Already voted on this poll." }, { status: 409 });
       }
-      return NextResponse.json({ error: rpcError.message }, { status: 500 });
+      if (rpcError.code === "P0002") {
+        return NextResponse.json({ error: "poll not found." }, { status: 404 });
+      }
+      logPublicMutationError("vote-create-rpc", rpcError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
     if (!row) {
-      return NextResponse.json({ error: "vote update returned no data." }, { status: 500 });
+      logPublicMutationError("vote-create-empty-rpc-result", new Error("RPC returned no row."));
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -104,8 +115,8 @@ export async function POST(request: Request, context: Context) {
       mode: "rpc",
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: `vote API failed: ${message}` }, { status: 500 });
+    logPublicMutationError("vote-create-unexpected", error);
+    return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
   }
 }
 
@@ -115,7 +126,7 @@ export async function PATCH(request: Request, context: Context) {
 
   try {
     const { id } = await context.params;
-    if (!id.trim() || id.length > 200) {
+    if (!id.trim() || id.length > 200 || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid poll id." }, { status: 400 });
     }
 
@@ -144,7 +155,8 @@ export async function PATCH(request: Request, context: Context) {
       .maybeSingle();
 
     if (pollError) {
-      return NextResponse.json({ error: pollError.message }, { status: 500 });
+      logPublicMutationError("vote-change-poll-read", pollError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     if (!poll) {
@@ -177,14 +189,16 @@ export async function PATCH(request: Request, context: Context) {
 
     if (rpcError) {
       if (rpcError.code === "P0002") {
-        return NextResponse.json({ error: rpcError.message }, { status: 409 });
+        return NextResponse.json({ error: "기존 투표를 찾을 수 없습니다." }, { status: 409 });
       }
-      return NextResponse.json({ error: rpcError.message }, { status: 500 });
+      logPublicMutationError("vote-change-rpc", rpcError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
     if (!row) {
-      return NextResponse.json({ error: "vote change returned no data." }, { status: 500 });
+      logPublicMutationError("vote-change-empty-rpc-result", new Error("RPC returned no row."));
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -198,7 +212,7 @@ export async function PATCH(request: Request, context: Context) {
       mode: "rpc",
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: `vote change API failed: ${message}` }, { status: 500 });
+    logPublicMutationError("vote-change-unexpected", error);
+    return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
   }
 }

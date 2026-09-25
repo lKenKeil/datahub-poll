@@ -7,6 +7,10 @@ import { POLLS } from '../../../data/polls';
 import { CommentRow, DbPoll } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { isValidVoterId, VOTER_ID_STORAGE_KEY } from '@/lib/voter-id';
+import {
+  getPollOptionImagePublicUrl,
+  normalizeOptionImagePaths,
+} from '@/lib/poll-option-image-paths';
 
 type VotePageParams = { id: string };
 
@@ -46,8 +50,6 @@ type ShareFeedback = {
   message: string;
 };
 
-const POLL_OPTION_IMAGES_BUCKET = 'poll-option-images';
-
 class ApiResponseError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -68,29 +70,6 @@ function calcPercentages(votes: number[]) {
   const total = votes.reduce((acc, curr) => acc + curr, 0);
   if (total === 0) return votes.map(() => 0);
   return votes.map((value) => Math.round((value / total) * 100));
-}
-
-function normalizeOptionImagePaths(value: unknown, optionCount: number) {
-  if (!Array.isArray(value) || value.length !== optionCount) return null;
-  return value.map((path) => (typeof path === 'string' && path ? path : null));
-}
-
-function getOptionImagePublicUrl(
-  pollId: string,
-  optionIndex: number,
-  objectPath: string | null | undefined,
-) {
-  if (!objectPath) return null;
-
-  const expectedPrefix = `${pollId}/options/${optionIndex}/`;
-  const fileName = objectPath.startsWith(expectedPrefix)
-    ? objectPath.slice(expectedPrefix.length)
-    : '';
-  if (!/^[0-9a-f-]{36}\.webp$/i.test(fileName)) return null;
-
-  return supabase.storage
-    .from(POLL_OPTION_IMAGES_BUCKET)
-    .getPublicUrl(objectPath).data.publicUrl;
 }
 
 async function copyTextToClipboard(text: string) {
@@ -422,7 +401,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   }, [comments]);
   const optionImageUrls = useMemo(() => {
     if (!pollData) return [];
-    return pollData.options.map((_, index) => getOptionImagePublicUrl(
+    return pollData.options.map((_, index) => getPollOptionImagePublicUrl(
+      supabase,
       pollData.id,
       index,
       pollData.optionImagePaths?.[index],

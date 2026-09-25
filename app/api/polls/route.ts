@@ -4,6 +4,11 @@ import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server
 import { PollCategory } from "@/lib/types";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import {
+  getUnsafeTextInputMessage,
+  logPublicMutationError,
+  PUBLIC_INTERNAL_ERROR_MESSAGE,
+} from "@/lib/public-api-hardening";
+import {
   PollOptionImageStorageError,
   PollOptionImageValidationError,
   removePollOptionImages,
@@ -139,12 +144,12 @@ async function parsePollCreateRequest(request: Request): Promise<PollCreateReque
 
     const match = OPTION_IMAGE_FIELD_PATTERN.exec(fieldName);
     if (!match || !(value instanceof File)) {
-      throw new PollCreateRequestError(`unexpected multipart field: ${fieldName}.`);
+      throw new PollCreateRequestError("unexpected multipart field.");
     }
 
     const optionIndex = Number(match[1]);
     if (!Number.isSafeInteger(optionIndex) || optionImages.has(optionIndex)) {
-      throw new PollCreateRequestError(`duplicate or invalid image index: ${fieldName}.`);
+      throw new PollCreateRequestError("duplicate or invalid image index.");
     }
     optionImages.set(optionIndex, value);
   }
@@ -199,11 +204,23 @@ export async function POST(request: Request) {
   try {
     const raw = await parsePollCreateRequest(request);
 
-    const rawTitle = typeof raw?.title === "string" ? raw.title.trim() : "";
-    const rawCategory = (typeof raw?.category === "string" ? raw.category.trim() : "") as PollCategory;
-    const rawOptions = Array.isArray(raw?.options) && raw.options.every((value) => typeof value === "string")
-      ? raw.options.map((value) => value.trim())
+    const rawTitleInput = typeof raw?.title === "string" ? raw.title : "";
+    const rawOptionInputs = Array.isArray(raw?.options) && raw.options.every((value) => typeof value === "string")
+      ? raw.options as string[]
       : [];
+    const rawOfficialFactInput = typeof raw.officialFact === "string" ? raw.officialFact : "";
+    const unsafeInputMessage = getUnsafeTextInputMessage([
+      { label: "투표 질문", value: rawTitleInput },
+      ...rawOptionInputs.map((value, index) => ({ label: `선택지 ${index + 1}`, value })),
+      { label: "설명 또는 참고정보", value: rawOfficialFactInput },
+    ]);
+    if (unsafeInputMessage) {
+      return NextResponse.json({ error: unsafeInputMessage }, { status: 400 });
+    }
+
+    const rawTitle = rawTitleInput.trim();
+    const rawCategory = (typeof raw?.category === "string" ? raw.category.trim() : "") as PollCategory;
+    const rawOptions = rawOptionInputs.map((value) => value.trim());
 
     if (rawTitle.length < 3 || rawTitle.length > 120) {
       return NextResponse.json({ error: "title must be 3-120 chars." }, { status: 400 });
@@ -288,16 +305,13 @@ export async function POST(request: Request) {
     }
 
     if (error) {
+      logPublicMutationError("poll-create-db-insert", error);
       const cleanupError = await removePollOptionImages(supabaseMutation, uploadedPaths);
       uploadedPaths = [];
       if (cleanupError) {
-        console.error("Failed to clean up poll option images after DB insert failure:", cleanupError);
-        return NextResponse.json(
-          { error: "poll creation failed and uploaded images could not be cleaned up." },
-          { status: 500 },
-        );
+        logPublicMutationError("poll-create-db-failure-cleanup", cleanupError);
       }
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
     pollInserted = true;
@@ -315,7 +329,7 @@ export async function POST(request: Request) {
     if (!pollInserted && supabaseMutation && pathsToClean.length > 0) {
       const cleanupError = await removePollOptionImages(supabaseMutation, pathsToClean);
       if (cleanupError) {
-        console.error("Failed to clean up poll option images after an unexpected error:", cleanupError);
+        logPublicMutationError("poll-create-unexpected-cleanup", cleanupError);
       }
     }
 
@@ -323,10 +337,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     if (error instanceof PollOptionImageStorageError) {
-      return NextResponse.json({ error: error.message }, { status: 502 });
+      logPublicMutationError("poll-create-storage", error);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 502 });
     }
 
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: `polls POST failed: ${message}` }, { status: 500 });
+    logPublicMutationError("poll-create-unexpected", error);
+    return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
   }
 }

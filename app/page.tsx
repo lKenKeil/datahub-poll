@@ -1,10 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { POLLS } from '../data/polls';
 import { DbPoll, OfficialStatistic } from '../lib/types';
 import { supabase } from '../lib/supabase';
+import {
+  getPollOptionImagePublicUrl,
+  normalizeOptionImagePaths,
+} from '../lib/poll-option-image-paths';
 
 type HomeCategory =
   | '전체'
@@ -142,7 +147,88 @@ type FeaturedBattle = {
   options: string[];
   participants: number;
   official: boolean;
+  option_image_paths?: Array<string | null> | null;
 };
+
+type PollImageSource = Pick<DbPoll, 'id' | 'options' | 'option_image_paths'>;
+
+function getPollPreviewImageUrls(poll: PollImageSource) {
+  const paths = normalizeOptionImagePaths(poll.option_image_paths, poll.options.length);
+  if (!paths) return [];
+
+  return paths
+    .map((path, optionIndex) => getPollOptionImagePublicUrl(
+      supabase,
+      poll.id,
+      optionIndex,
+      path,
+    ))
+    .filter((url): url is string => Boolean(url))
+    .slice(0, 2);
+}
+
+function PollOptionImagePreview({
+  poll,
+  variant,
+  eager = false,
+  badge,
+  fallback = null,
+}: {
+  poll: PollImageSource;
+  variant: 'hero' | 'card' | 'compact';
+  eager?: boolean;
+  badge?: string;
+  fallback?: ReactNode;
+}) {
+  const imageUrls = getPollPreviewImageUrls(poll);
+  if (imageUrls.length === 0) return fallback;
+
+  const containerClass = variant === 'hero'
+    ? 'mt-5 aspect-[16/7] w-full rounded-2xl'
+    : variant === 'card'
+      ? 'mt-4 aspect-[2/1] w-full rounded-2xl'
+      : 'h-20 w-24 shrink-0 rounded-2xl sm:w-28';
+  const imageSizes = variant === 'hero'
+    ? imageUrls.length > 1
+      ? '(max-width: 1024px) 45vw, 280px'
+      : '(max-width: 1024px) calc(100vw - 80px), 560px'
+    : variant === 'card'
+      ? imageUrls.length > 1
+        ? '(max-width: 768px) 45vw, (max-width: 1280px) 22vw, 14vw'
+        : '(max-width: 768px) calc(100vw - 72px), (max-width: 1280px) 45vw, 28vw'
+      : '112px';
+
+  return (
+    <div
+      aria-hidden="true"
+      className={`relative grid min-w-0 grid-flow-col overflow-hidden bg-slate-200 dark:bg-slate-900 ${imageUrls.length > 1 ? 'grid-cols-2 gap-px' : 'grid-cols-1'} ${containerClass}`}
+    >
+      {imageUrls.map((url, index) => (
+        <div key={url} className="relative min-w-0 overflow-hidden">
+          <Image
+            src={url}
+            alt=""
+            fill
+            sizes={imageSizes}
+            loading={eager ? 'eager' : 'lazy'}
+            fetchPriority={eager ? 'high' : 'auto'}
+            className="object-cover transition duration-300 group-hover:scale-[1.02]"
+          />
+          {imageUrls.length > 1 ? (
+            <span className="absolute bottom-2 left-2 rounded-full bg-slate-950/65 px-2 py-1 text-[10px] font-black text-white backdrop-blur-sm">
+              {index + 1}
+            </span>
+          ) : null}
+        </div>
+      ))}
+      {badge ? (
+        <span className="absolute left-2 top-2 flex h-7 min-w-7 items-center justify-center rounded-lg bg-cyan-600/90 px-2 text-xs font-black text-white shadow-sm">
+          {badge}
+        </span>
+      ) : null}
+    </div>
+  );
+}
 
 export default function Home() {
   const [dbPolls, setDbPolls] = useState<DbPoll[]>([]);
@@ -306,6 +392,7 @@ export default function Home() {
         options: top.options,
         participants: top.participants || 0,
         official: false,
+        option_image_paths: top.option_image_paths,
       };
     }
     if (filteredOfficialPolls.length > 0) {
@@ -317,6 +404,7 @@ export default function Home() {
         options: top.options,
         participants: top.participants,
         official: true,
+        option_image_paths: null,
       };
     }
     return null;
@@ -397,6 +485,7 @@ export default function Home() {
                     <span className="text-xs font-bold text-slate-500">참여자 {featuredBattle.participants.toLocaleString()}명</span>
                   </div>
                   <h2 className="mt-4 text-2xl font-black leading-snug text-slate-950 dark:text-white md:text-3xl">{featuredBattle.title}</h2>
+                  <PollOptionImagePreview poll={featuredBattle} variant="hero" eager />
                   <div className="mt-5 grid gap-2 sm:grid-cols-2">
                     {featuredBattle.options.slice(0, 4).map((option, index) => (
                       <div key={`${featuredBattle.id}_${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold dark:border-white/10 dark:bg-white/5">
@@ -449,6 +538,7 @@ export default function Home() {
                       {isTightRace(poll.votes) ? '접전 중' : isHotPoll(poll) ? 'HOT' : '인기'}
                     </span>
                   </div>
+                  <PollOptionImagePreview poll={poll} variant="card" />
                   <h3 className="mt-5 text-xl font-black leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                   <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-5 text-sm dark:border-white/10">
                     <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
@@ -473,7 +563,12 @@ export default function Home() {
             <div className="grid gap-4 lg:grid-cols-2">
               {risingPolls.map((poll, index) => (
                 <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex items-center gap-4 rounded-3xl border border-slate-200 bg-white p-5 transition hover:border-cyan-500/60 dark:border-white/10 dark:bg-white/[0.04]">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 text-lg font-black text-cyan-600 dark:text-cyan-300">{index + 1}</span>
+                  <PollOptionImagePreview
+                    poll={poll}
+                    variant="compact"
+                    badge={String(index + 1)}
+                    fallback={<span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 text-lg font-black text-cyan-600 dark:text-cyan-300">{index + 1}</span>}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
                       <span className="text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</span>
@@ -531,6 +626,7 @@ export default function Home() {
                     <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-blue-600 dark:text-blue-300">{getInterestCategory(poll)}</span>
                     <span className="text-slate-400">{formatRelativeTime(poll.created_at)}</span>
                   </div>
+                  <PollOptionImagePreview poll={poll} variant="card" />
                   <h3 className="mt-4 text-lg font-black leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                   <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-xs dark:border-white/10">
                     <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
