@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { isAdminAuthorized } from "@/lib/admin-auth";
+import {
+  cleanupPollOptionImagesAfterDeletion,
+  getPollOptionImagePathsForDeletion,
+} from "@/lib/poll-option-image-cleanup";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -67,6 +71,33 @@ export async function DELETE(request: Request, context: Context) {
 
   const { id } = await context.params;
 
+  const { data: poll, error: pollError } = await supabaseMutation
+    .from("polls")
+    .select("id,option_image_paths")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (pollError) {
+    return NextResponse.json({ error: pollError.message }, { status: 500 });
+  }
+
+  if (!poll) {
+    return NextResponse.json({ error: "Poll not found." }, { status: 404 });
+  }
+
+  const rawImagePaths = (poll as { option_image_paths?: unknown }).option_image_paths;
+  const imagePaths = getPollOptionImagePathsForDeletion(id, rawImagePaths);
+  const storedPathCount = Array.isArray(rawImagePaths)
+    ? rawImagePaths.filter((value) => typeof value === "string").length
+    : 0;
+
+  if (storedPathCount > imagePaths.length) {
+    console.warn("Skipped invalid poll option image paths during poll deletion.", {
+      pollId: id,
+      skippedPathCount: storedPathCount - imagePaths.length,
+    });
+  }
+
   const { data: comments, error: commentsError } = await supabaseMutation
     .from("comments")
     .select("id")
@@ -97,13 +128,23 @@ export async function DELETE(request: Request, context: Context) {
     return NextResponse.json({ error: commentsDeleteError.message }, { status: 500 });
   }
 
-  const { error: pollDeleteError } = await supabaseMutation
+  const { data: deletedPoll, error: pollDeleteError } = await supabaseMutation
     .from("polls")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (pollDeleteError) {
     return NextResponse.json({ error: pollDeleteError.message }, { status: 500 });
+  }
+
+  if (!deletedPoll) {
+    return NextResponse.json({ error: "Poll was not deleted." }, { status: 409 });
+  }
+
+  if (imagePaths.length > 0) {
+    await cleanupPollOptionImagesAfterDeletion(supabaseMutation, id, imagePaths);
   }
 
   return NextResponse.json({ ok: true });

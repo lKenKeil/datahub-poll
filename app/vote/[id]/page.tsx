@@ -2,6 +2,7 @@
 
 import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { POLLS } from '../../../data/polls';
 import { CommentRow, DbPoll } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +18,7 @@ type ViewPoll = {
   votes: number[];
   participants: number;
   officialFact?: string;
+  optionImagePaths?: Array<string | null> | null;
 };
 
 type DbPollWithOfficialFact = DbPoll & {
@@ -39,6 +41,13 @@ type CommentView = CommentRow & {
   user_reaction: 'like' | 'dislike' | null;
 };
 
+type ShareFeedback = {
+  type: 'success' | 'error';
+  message: string;
+};
+
+const POLL_OPTION_IMAGES_BUCKET = 'poll-option-images';
+
 class ApiResponseError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -59,6 +68,60 @@ function calcPercentages(votes: number[]) {
   const total = votes.reduce((acc, curr) => acc + curr, 0);
   if (total === 0) return votes.map(() => 0);
   return votes.map((value) => Math.round((value / total) * 100));
+}
+
+function normalizeOptionImagePaths(value: unknown, optionCount: number) {
+  if (!Array.isArray(value) || value.length !== optionCount) return null;
+  return value.map((path) => (typeof path === 'string' && path ? path : null));
+}
+
+function getOptionImagePublicUrl(
+  pollId: string,
+  optionIndex: number,
+  objectPath: string | null | undefined,
+) {
+  if (!objectPath) return null;
+
+  const expectedPrefix = `${pollId}/options/${optionIndex}/`;
+  const fileName = objectPath.startsWith(expectedPrefix)
+    ? objectPath.slice(expectedPrefix.length)
+    : '';
+  if (!/^[0-9a-f-]{36}\.webp$/i.test(fileName)) return null;
+
+  return supabase.storage
+    .from(POLL_OPTION_IMAGES_BUCKET)
+    .getPublicUrl(objectPath).data.publicUrl;
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Continue to the DOM fallback for older or permission-restricted browsers.
+    }
+  }
+
+  const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.tabIndex = -1;
+  textarea.setAttribute('aria-hidden', 'true');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    const copied = document.execCommand('copy');
+    if (!copied) throw new Error('Clipboard copy was rejected.');
+  } finally {
+    textarea.remove();
+    activeElement?.focus();
+  }
 }
 
 function getOrCreateFingerprint() {
@@ -97,6 +160,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [replyText, setReplyText] = useState('');
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+  const [shareFeedback, setShareFeedback] = useState<ShareFeedback | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
   const [pollData, setPollData] = useState<ViewPoll | null>(null);
   const [recommendationPool, setRecommendationPool] = useState<DbPoll[]>([]);
   const [isOfficial, setIsOfficial] = useState(false);
@@ -106,10 +171,17 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [syncState, setSyncState] = useState<'live' | 'syncing' | 'reconnecting'>('live');
   const lastSnapshotRef = useRef('');
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shareFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setUserFingerprint(getOrCreateFingerprint());
     setVoterId(getOrCreateVoterId());
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (shareFeedbackTimerRef.current) clearTimeout(shareFeedbackTimerRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -204,6 +276,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           votes: mergedVotes,
           participants: dbPoll?.participants ?? officialPoll.participants,
           officialFact: officialPoll.officialFact,
+          optionImagePaths: null,
         });
         setBarWidths(calcPercentages(mergedVotes));
       } else if (dbPoll) {
@@ -217,6 +290,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           votes: safeVotes,
           participants: dbPoll.participants || 0,
           officialFact: dbPoll.officialFact ?? dbPoll.official_fact,
+          optionImagePaths: normalizeOptionImagePaths(
+            dbPoll.option_image_paths,
+            dbPoll.options.length,
+          ),
         });
         setBarWidths(calcPercentages(safeVotes));
       } else if (!silent) {
@@ -255,6 +332,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           votes: fallbackVotes,
           participants: officialPoll.participants,
           officialFact: officialPoll.officialFact,
+          optionImagePaths: null,
         });
         setBarWidths(calcPercentages(fallbackVotes));
       } else if (!silent) {
@@ -342,6 +420,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     }
     return map;
   }, [comments]);
+  const optionImageUrls = useMemo(() => {
+    if (!pollData) return [];
+    return pollData.options.map((_, index) => getOptionImagePublicUrl(
+      pollData.id,
+      index,
+      pollData.optionImagePaths?.[index],
+    ));
+  }, [pollData]);
 
   if (loading) {
     return <div className="min-h-screen bg-slate-50 dark:bg-[#020617] flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-lg">투표를 불러오는 중...</div>;
@@ -364,6 +450,48 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       return bTime - aTime;
     })
     .slice(0, 4);
+
+  const showShareFeedback = (feedback: ShareFeedback) => {
+    if (shareFeedbackTimerRef.current) clearTimeout(shareFeedbackTimerRef.current);
+    setShareFeedback(feedback);
+    shareFeedbackTimerRef.current = setTimeout(() => {
+      setShareFeedback(null);
+      shareFeedbackTimerRef.current = null;
+    }, 3200);
+  };
+
+  const handleShare = async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+
+    const shareUrl = new URL(window.location.pathname, window.location.origin).toString();
+    const shareText = voted && choice && selectedOptionIndex !== null
+      ? `내 선택은 '${choice}'! ${selectedPercentage}%가 같은 선택을 했어요. 당신의 선택은?`
+      : `'${pollData.title}' 투표에 참여해보세요. 당신의 선택은?`;
+
+    try {
+      if (typeof navigator.share === 'function') {
+        try {
+          await navigator.share({
+            title: pollData.title,
+            text: shareText,
+            url: shareUrl,
+          });
+          showShareFeedback({ type: 'success', message: '공유가 완료됐어요.' });
+          return;
+        } catch {
+          // Cancellation and unsupported share targets both continue to URL copy.
+        }
+      }
+
+      await copyTextToClipboard(shareUrl);
+      showShareFeedback({ type: 'success', message: '링크를 복사했어요.' });
+    } catch {
+      showShareFeedback({ type: 'error', message: '공유하지 못했어요. 잠시 후 다시 시도해주세요.' });
+    } finally {
+      setIsSharing(false);
+    }
+  };
 
   const handleVote = async (idx: number) => {
     if (voted || !voterId) return;
@@ -623,19 +751,34 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 <div className="mt-7 grid gap-3 sm:grid-cols-2">
                   {pollData.options.map((option, index) => {
                     const isCurrent = isRevoting && selectedOptionIndex === index;
+                    const imageUrl = optionImageUrls[index];
                     return (
                       <button
                         key={`${option}_${index}`}
                         type="button"
                         onClick={() => (isRevoting ? handleRevote(index) : handleVote(index))}
-                        className={`group flex min-h-28 w-full min-w-0 items-center justify-between gap-4 rounded-2xl border p-5 text-left transition duration-200 active:scale-[0.99] ${isCurrent ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/15 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:-translate-y-0.5 hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10'}`}
+                        className={`group w-full min-w-0 overflow-hidden rounded-2xl border text-left transition duration-200 active:scale-[0.99] ${imageUrl ? 'flex flex-col p-3' : 'flex min-h-28 items-center justify-between gap-4 p-5'} ${isCurrent ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/15 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:-translate-y-0.5 hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10'}`}
                       >
-                        <span className="flex min-w-0 items-center gap-3">
-                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${isCurrent ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 shadow-sm dark:bg-white/10 dark:text-blue-300'}`}>{index + 1}</span>
-                          <span className="min-w-0 break-words text-base font-black text-slate-900 dark:text-white sm:text-lg">{option}</span>
-                        </span>
-                        <span className={`hidden shrink-0 text-xs font-black text-blue-600 transition dark:text-blue-300 sm:inline ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'}`}>
-                          {isCurrent ? '현재 선택 ✓' : '선택 →'}
+                        {imageUrl ? (
+                          <span className="relative block aspect-[4/3] max-h-72 w-full overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-900">
+                            <Image
+                              src={imageUrl}
+                              alt=""
+                              fill
+                              unoptimized
+                              sizes="(max-width: 640px) 100vw, 50vw"
+                              className="object-cover transition duration-300 group-hover:scale-[1.02]"
+                            />
+                          </span>
+                        ) : null}
+                        <span className={`flex w-full min-w-0 items-center justify-between gap-3 ${imageUrl ? 'px-1 pb-1 pt-4' : ''}`}>
+                          <span className="flex min-w-0 items-center gap-3">
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${isCurrent ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 shadow-sm dark:bg-white/10 dark:text-blue-300'}`}>{index + 1}</span>
+                            <span className="min-w-0 break-words text-base font-black text-slate-900 dark:text-white sm:text-lg">{option}</span>
+                          </span>
+                          <span className={`hidden shrink-0 text-xs font-black text-blue-600 transition dark:text-blue-300 sm:inline ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'}`}>
+                            {isCurrent ? '현재 선택 ✓' : '선택 →'}
+                          </span>
                         </span>
                       </button>
                     );
@@ -663,20 +806,37 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     const isSelected = selectedOptionIndex === index;
                     const percentage = barWidths[index] ?? 0;
                     const voteCount = pollData.votes[index] ?? 0;
+                    const imageUrl = optionImageUrls[index];
                     return (
                       <div key={`${option}_${index}`} className={`rounded-2xl border p-4 sm:p-5 ${isSelected ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-500/10 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50/70 dark:border-white/10 dark:bg-white/[0.025]'}`}>
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`break-words font-black ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>{option}</span>
-                              {isSelected ? <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">내 선택 ✓</span> : null}
+                        <div className={imageUrl ? 'grid gap-4 sm:grid-cols-[minmax(140px,220px)_minmax(0,1fr)] sm:items-center' : ''}>
+                          {imageUrl ? (
+                            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-900">
+                              <Image
+                                src={imageUrl}
+                                alt=""
+                                fill
+                                unoptimized
+                                sizes="(max-width: 640px) 100vw, 220px"
+                                className="object-cover"
+                              />
                             </div>
-                            <p className="mt-1 text-xs font-semibold text-slate-500">{voteCount.toLocaleString()}표</p>
+                          ) : null}
+                          <div className={imageUrl ? 'min-w-0' : ''}>
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={`break-words font-black ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>{option}</span>
+                                  {isSelected ? <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">내 선택 ✓</span> : null}
+                                </div>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">{voteCount.toLocaleString()}표</p>
+                              </div>
+                              <span className={`text-2xl font-black ${isSelected ? 'text-blue-600 dark:text-blue-300' : 'text-slate-900 dark:text-white'}`}>{percentage}%</span>
+                            </div>
+                            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
+                              <div className={`h-full rounded-full transition-all duration-700 ease-out ${isSelected ? 'bg-gradient-to-r from-blue-600 to-cyan-400' : 'bg-slate-400 dark:bg-slate-500'}`} style={{ width: `${percentage}%` }} />
+                            </div>
                           </div>
-                          <span className={`text-2xl font-black ${isSelected ? 'text-blue-600 dark:text-blue-300' : 'text-slate-900 dark:text-white'}`}>{percentage}%</span>
-                        </div>
-                        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
-                          <div className={`h-full rounded-full transition-all duration-700 ease-out ${isSelected ? 'bg-gradient-to-r from-blue-600 to-cyan-400' : 'bg-slate-400 dark:bg-slate-500'}`} style={{ width: `${percentage}%` }} />
                         </div>
                       </div>
                     );
@@ -689,7 +849,16 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                   <button type="button" onClick={() => setIsRevoting(true)} className="flex-1 rounded-full border border-blue-500/40 px-5 py-3 text-sm font-black text-blue-700 transition hover:border-blue-600 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-500/10">다시 투표하기</button>
-                  <button type="button" disabled title="공유 기능은 준비 중입니다." className="flex-1 cursor-not-allowed rounded-full border border-slate-200 bg-slate-100 px-5 py-3 text-sm font-black text-slate-400 dark:border-white/10 dark:bg-white/5">공유하기 · 준비 중</button>
+                  <button
+                    type="button"
+                    onClick={() => void handleShare()}
+                    disabled={isSharing}
+                    aria-label={`${pollData.title} 공유하기`}
+                    aria-busy={isSharing}
+                    className="flex-1 rounded-full bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {isSharing ? '공유 준비 중...' : '공유하기'}
+                  </button>
                 </div>
               </div>
             )}
@@ -708,6 +877,18 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                   <dd className="mt-1 text-base font-black text-blue-600 dark:text-blue-300">{voted ? '참여 완료' : '투표 진행 중'}</dd>
                 </div>
               </dl>
+              {!voted ? (
+                <button
+                  type="button"
+                  onClick={() => void handleShare()}
+                  disabled={isSharing}
+                  aria-label={`${pollData.title} 공유하기`}
+                  aria-busy={isSharing}
+                  className="mt-4 w-full rounded-full bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/15 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-70"
+                >
+                  {isSharing ? '공유 준비 중...' : '공유하기'}
+                </button>
+              ) : null}
             </section>
 
             {pollData.officialFact ? (
@@ -825,6 +1006,17 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           </aside>
         </div>
       </div>
+
+      {shareFeedback ? (
+        <div
+          role={shareFeedback.type === 'error' ? 'alert' : 'status'}
+          aria-live={shareFeedback.type === 'error' ? 'assertive' : 'polite'}
+          aria-atomic="true"
+          className={`pointer-events-none fixed bottom-6 left-1/2 z-[110] w-[calc(100%_-_2rem)] max-w-sm -translate-x-1/2 rounded-2xl border px-5 py-3 text-center text-sm font-black shadow-2xl backdrop-blur-xl ${shareFeedback.type === 'error' ? 'border-rose-500/30 bg-rose-950/90 text-rose-100' : 'border-emerald-500/30 bg-slate-950/90 text-emerald-200'}`}
+        >
+          {shareFeedback.message}
+        </div>
+      ) : null}
     </main>
   );
 }

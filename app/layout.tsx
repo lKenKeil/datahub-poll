@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { getSiteUrl } from "@/lib/site-url";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,8 +16,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Data Hub Poll",
-  description: "공식 통계와 커뮤니티 투표를 함께 보는 데이터 허브",
+  metadataBase: getSiteUrl(),
+  title: "DATA HUB - 사람들의 선택을 확인하는 투표 커뮤니티",
+  description: "다양한 주제에 투표하고 다른 사람들의 선택과 결과를 확인해보세요.",
+  openGraph: {
+    title: "DATA HUB - 사람들의 선택을 확인하는 투표 커뮤니티",
+    description: "다양한 주제에 투표하고 다른 사람들의 선택과 결과를 확인해보세요.",
+    siteName: "DATA HUB",
+    locale: "ko_KR",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "DATA HUB - 사람들의 선택을 확인하는 투표 커뮤니티",
+    description: "다양한 주제에 투표하고 다른 사람들의 선택과 결과를 확인해보세요.",
+  },
 };
 
 export default function RootLayout({

@@ -25,6 +25,7 @@ export type DbPoll = {
   votes: PollOptionVotes;
   participants: number;
   official_fact?: string;
+  option_image_paths?: Array<string | null> | null;
   created_at?: string;
 };
 
