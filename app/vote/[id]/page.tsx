@@ -11,6 +11,7 @@ import {
   getPollOptionImagePublicUrl,
   normalizeOptionImagePaths,
 } from '@/lib/poll-option-image-paths';
+import { getStoredPollOwnerToken } from '@/lib/poll-owner-storage';
 
 type VotePageParams = { id: string };
 
@@ -144,6 +145,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [pollData, setPollData] = useState<ViewPoll | null>(null);
   const [recommendationPool, setRecommendationPool] = useState<DbPoll[]>([]);
   const [isOfficial, setIsOfficial] = useState(false);
+  const [canManagePoll, setCanManagePoll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userFingerprint, setUserFingerprint] = useState('');
   const [voterId, setVoterId] = useState('');
@@ -156,6 +158,19 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     setUserFingerprint(getOrCreateFingerprint());
     setVoterId(getOrCreateVoterId());
   }, []);
+
+  useEffect(() => {
+    if (officialPoll) {
+      setCanManagePoll(false);
+      return;
+    }
+
+    try {
+      setCanManagePoll(Boolean(getStoredPollOwnerToken(id)));
+    } catch {
+      setCanManagePoll(false);
+    }
+  }, [id, officialPoll]);
 
   useEffect(() => {
     return () => {
@@ -868,6 +883,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 >
                   {isSharing ? '공유 준비 중...' : '공유하기'}
                 </button>
+              ) : null}
+              {canManagePoll && !isOfficial ? (
+                <Link
+                  href={`/vote/${encodeURIComponent(id)}/edit`}
+                  className="mt-3 flex w-full items-center justify-center rounded-full border border-slate-300 px-5 py-3 text-sm font-black text-slate-700 transition hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700 dark:border-white/15 dark:text-slate-200 dark:hover:border-blue-400 dark:hover:bg-blue-500/10 dark:hover:text-blue-200"
+                >
+                  내 투표 관리
+                </Link>
               ) : null}
             </section>
 

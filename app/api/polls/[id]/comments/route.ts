@@ -7,6 +7,7 @@ import {
   logPublicMutationError,
   PUBLIC_INTERNAL_ERROR_MESSAGE,
 } from "@/lib/public-api-hardening";
+import { getUnicodeCodePointLength } from "@/lib/unicode-length";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -50,7 +51,7 @@ export async function POST(request: Request, context: Context) {
     }
 
     const text = body.text.trim();
-    if (!text || text.length > 2000) {
+    if (!text || getUnicodeCodePointLength(text) > 2000) {
       return NextResponse.json({ error: "comment text must be 1-2000 chars." }, { status: 400 });
     }
 

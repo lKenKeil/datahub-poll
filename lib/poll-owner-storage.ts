@@ -12,3 +12,11 @@ export function storePollOwnerToken(pollId: string, ownerToken: string) {
     throw new Error("Owner token storage verification failed.");
   }
 }
+
+export function getStoredPollOwnerToken(pollId: string) {
+  return localStorage.getItem(getPollOwnerTokenStorageKey(pollId));
+}
+
+export function removeStoredPollOwnerToken(pollId: string) {
+  localStorage.removeItem(getPollOwnerTokenStorageKey(pollId));
+}

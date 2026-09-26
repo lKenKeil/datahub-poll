@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PollCategory } from '@/lib/types';
 import { storePollOwnerToken } from '@/lib/poll-owner-storage';
+import { getUnicodeCodePointLength } from '@/lib/unicode-length';
 
 type InterestCategory =
   | '연애·관계'
@@ -81,6 +82,7 @@ export default function CreatePollPage() {
   const [ownerTokenCopyMessage, setOwnerTokenCopyMessage] = useState('');
 
   const trimmedTitle = title.trim();
+  const titleLength = getUnicodeCodePointLength(title);
   const trimmedOptions = useMemo(() => options.map((option) => option.text.trim()), [options]);
   const selectedImageBytes = useMemo(
     () => options.reduce((total, option) => total + (option.imageFile?.size ?? 0), 0),
@@ -111,14 +113,22 @@ export default function CreatePollPage() {
 
   const validationMessage = useMemo(() => {
     if (!interestCategory) return '카테고리를 선택해주세요.';
-    if (trimmedTitle.length < MIN_TITLE_LENGTH) return `투표 질문은 ${MIN_TITLE_LENGTH}자 이상 입력해주세요.`;
+    const normalizedTitleLength = getUnicodeCodePointLength(trimmedTitle);
+    if (normalizedTitleLength < MIN_TITLE_LENGTH) return `투표 질문은 ${MIN_TITLE_LENGTH}자 이상 입력해주세요.`;
+    if (normalizedTitleLength > MAX_TITLE_LENGTH) return `투표 질문은 ${MAX_TITLE_LENGTH}자 이하로 입력해주세요.`;
     if (trimmedOptions.length < MIN_OPTIONS) return '선택지는 최소 2개가 필요해요.';
     if (trimmedOptions.some((option) => !option)) return '빈 선택지가 있어요. 모든 선택지를 입력해주세요.';
+    if (trimmedOptions.some((option) => getUnicodeCodePointLength(option) > MAX_OPTION_LENGTH)) {
+      return `선택지는 ${MAX_OPTION_LENGTH}자 이하로 입력해주세요.`;
+    }
+    if (getUnicodeCodePointLength(description.trim()) > MAX_DESCRIPTION_LENGTH) {
+      return `설명은 ${MAX_DESCRIPTION_LENGTH}자 이하로 입력해주세요.`;
+    }
 
     const uniqueOptions = new Set(trimmedOptions.map((option) => option.toLowerCase()));
     if (uniqueOptions.size !== trimmedOptions.length) return '중복된 선택지가 있어요.';
     return '';
-  }, [interestCategory, trimmedOptions, trimmedTitle.length]);
+  }, [description, interestCategory, trimmedOptions, trimmedTitle]);
 
   const clearError = () => {
     if (errorMessage) setErrorMessage('');
@@ -436,12 +446,11 @@ export default function CreatePollPage() {
                 }}
                 className="mt-6 w-full rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 text-base font-bold outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/5 dark:text-white sm:text-lg"
                 placeholder="예: 평생 짜장면만 먹기 vs 평생 짬뽕만 먹기"
-                maxLength={MAX_TITLE_LENGTH}
                 aria-describedby="poll-title-help"
               />
               <div id="poll-title-help" className="mt-2 flex justify-between gap-4 text-xs font-semibold text-slate-500">
                 <span>{MIN_TITLE_LENGTH}자 이상 입력해주세요.</span>
-                <span>{title.length}/{MAX_TITLE_LENGTH}</span>
+                <span>{titleLength}/{MAX_TITLE_LENGTH}</span>
               </div>
             </section>
 
@@ -478,7 +487,7 @@ export default function CreatePollPage() {
                             여기에 붙여넣기
                           </span>
                         ) : null}
-                        <span className="text-[11px] font-semibold text-slate-400">{option.text.length}/{MAX_OPTION_LENGTH}</span>
+                        <span className="text-[11px] font-semibold text-slate-400">{getUnicodeCodePointLength(option.text)}/{MAX_OPTION_LENGTH}</span>
                       </div>
                     </div>
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
@@ -490,7 +499,6 @@ export default function CreatePollPage() {
                         disabled={isSubmitting}
                         className="min-w-0 flex-1 rounded-xl border-2 border-slate-200 bg-white p-3.5 text-base font-semibold outline-none transition placeholder:text-slate-400 focus:border-blue-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
                         placeholder={index === 0 ? '예: 짜장면' : index === 1 ? '예: 짬뽕' : `선택지 ${index + 1}`}
-                        maxLength={MAX_OPTION_LENGTH}
                       />
                       <button
                         type="button"
@@ -612,9 +620,8 @@ export default function CreatePollPage() {
                 }}
                 className="mt-6 h-32 w-full resize-none rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 text-base font-medium outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/5 dark:text-white"
                 placeholder="예: 가격은 같다고 가정하고 골라주세요."
-                maxLength={MAX_DESCRIPTION_LENGTH}
               />
-              <p className="mt-2 text-right text-xs font-semibold text-slate-500">{description.length}/{MAX_DESCRIPTION_LENGTH}</p>
+              <p className="mt-2 text-right text-xs font-semibold text-slate-500">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
             </section>
           </div>
 

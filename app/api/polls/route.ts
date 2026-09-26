@@ -17,6 +17,7 @@ import {
   type ValidatedOptionImage,
 } from "@/lib/poll-option-images";
 import { createPollOwnerCredential } from "@/lib/poll-owner-token";
+import { getUnicodeCodePointLength } from "@/lib/unicode-length";
 
 const validCategories = new Set<PollCategory>(["학술/통계", "IT/테크", "사회/경제", "라이프스타일", "커뮤니티"]);
 const MAX_MULTIPART_REQUEST_BYTES = 4_400_000;
@@ -237,7 +238,8 @@ export async function POST(request: Request) {
     const rawCategory = (typeof raw?.category === "string" ? raw.category.trim() : "") as PollCategory;
     const rawOptions = rawOptionInputs.map((value) => value.trim());
 
-    if (rawTitle.length < 3 || rawTitle.length > 120) {
+    const titleLength = getUnicodeCodePointLength(rawTitle);
+    if (titleLength < 3 || titleLength > 120) {
       return NextResponse.json({ error: "title must be 3-120 chars." }, { status: 400 });
     }
 
@@ -245,7 +247,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "invalid category." }, { status: 400 });
     }
 
-    if (rawOptions.length < 2 || rawOptions.length > 6 || rawOptions.some((opt) => !opt || opt.length > 50)) {
+    if (
+      rawOptions.length < 2
+      || rawOptions.length > 6
+      || rawOptions.some((opt) => !opt || getUnicodeCodePointLength(opt) > 50)
+    ) {
       return NextResponse.json({ error: "options must be 2-6 values of 1-50 chars." }, { status: 400 });
     }
 
@@ -259,7 +265,7 @@ export async function POST(request: Request) {
     }
 
     const officialFact = typeof raw.officialFact === "string" ? raw.officialFact.trim() : "";
-    if (officialFact.length > 300) {
+    if (getUnicodeCodePointLength(officialFact) > 300) {
       return NextResponse.json({ error: "official_fact must be at most 300 chars." }, { status: 400 });
     }
 
