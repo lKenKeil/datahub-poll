@@ -11,11 +11,12 @@ import {
 import {
   PollOptionImageStorageError,
   PollOptionImageValidationError,
+  type ValidatedOptionImage,
+} from "@/lib/poll-option-image-errors";
+import {
   removePollOptionImages,
   uploadPollOptionImages,
-  validateAndEncodeOptionImage,
-  type ValidatedOptionImage,
-} from "@/lib/poll-option-images";
+} from "@/lib/poll-option-image-storage";
 import { createPollOwnerCredential } from "@/lib/poll-owner-token";
 import { getUnicodeCodePointLength } from "@/lib/unicode-length";
 
@@ -279,8 +280,13 @@ export async function POST(request: Request) {
     }
 
     const validatedImages: ValidatedOptionImage[] = [];
-    for (const [optionIndex, file] of [...raw.optionImages.entries()].sort((a, b) => a[0] - b[0])) {
-      validatedImages.push(await validateAndEncodeOptionImage(file, optionIndex));
+    if (raw.optionImages.size > 0) {
+      const { validateAndEncodeOptionImage } = await import(
+        "@/lib/poll-option-image-processing"
+      );
+      for (const [optionIndex, file] of [...raw.optionImages.entries()].sort((a, b) => a[0] - b[0])) {
+        validatedImages.push(await validateAndEncodeOptionImage(file, optionIndex));
+      }
     }
 
     const id = `custom_${randomUUID()}`;

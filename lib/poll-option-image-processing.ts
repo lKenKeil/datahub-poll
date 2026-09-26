@@ -1,16 +1,11 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import sharp from "sharp";
 import {
-  removePollOptionImages,
-} from "@/lib/poll-option-image-cleanup";
-import { POLL_OPTION_IMAGES_BUCKET } from "@/lib/poll-option-image-paths";
+  PollOptionImageValidationError,
+  type ValidatedOptionImage,
+} from "@/lib/poll-option-image-errors";
 
-export {
-  removePollOptionImages,
-} from "@/lib/poll-option-image-cleanup";
-export { POLL_OPTION_IMAGES_BUCKET } from "@/lib/poll-option-image-paths";
 export const MAX_OPTION_IMAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_OPTION_IMAGE_WIDTH = 4096;
 export const MAX_OPTION_IMAGE_HEIGHT = 4096;
@@ -27,31 +22,6 @@ type DetectedImage = {
   format: "jpeg" | "png" | "webp";
   mimeType: "image/jpeg" | "image/png" | "image/webp";
 };
-
-export type ValidatedOptionImage = {
-  optionIndex: number;
-  data: Buffer;
-};
-
-export class PollOptionImageValidationError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status = 400) {
-    super(message);
-    this.name = "PollOptionImageValidationError";
-    this.status = status;
-  }
-}
-
-export class PollOptionImageStorageError extends Error {
-  readonly uploadedPaths: string[];
-
-  constructor(message: string, uploadedPaths: string[] = []) {
-    super(message);
-    this.name = "PollOptionImageStorageError";
-    this.uploadedPaths = uploadedPaths;
-  }
-}
 
 function detectImage(buffer: Buffer): DetectedImage | null {
   if (
@@ -113,10 +83,6 @@ export async function validateAndEncodeOptionImage(
     );
   }
 
-  // sharp is a native dependency. Loading it here keeps read-only routes and
-  // text-only mutations independent from the native module at runtime.
-  const { default: sharp } = await import("sharp");
-
   try {
     const metadata = await sharp(input, {
       failOn: "error",
@@ -176,52 +142,6 @@ export async function validateAndEncodeOptionImage(
     if (error instanceof PollOptionImageValidationError) throw error;
     throw new PollOptionImageValidationError(
       `optionImages[${optionIndex}] could not be decoded as a valid image.`,
-    );
-  }
-}
-
-export async function uploadPollOptionImages(
-  supabase: SupabaseClient,
-  pollId: string,
-  images: ValidatedOptionImage[],
-): Promise<Array<string | null>> {
-  const imagePaths: Array<string | null> = [];
-  const uploadedPaths: string[] = [];
-
-  try {
-    for (const image of images) {
-      const path = `${pollId}/options/${image.optionIndex}/${randomUUID()}.webp`;
-      const { error } = await supabase.storage
-        .from(POLL_OPTION_IMAGES_BUCKET)
-        .upload(path, image.data, {
-          cacheControl: "31536000",
-          contentType: "image/webp",
-          upsert: false,
-        });
-
-      if (error) {
-        console.error("Poll option image upload failed:", error.message);
-        throw new PollOptionImageStorageError("Failed to upload a poll option image.");
-      }
-
-      uploadedPaths.push(path);
-      imagePaths[image.optionIndex] = path;
-    }
-
-    return imagePaths;
-  } catch (error) {
-    const cleanupError = await removePollOptionImages(supabase, uploadedPaths);
-    if (cleanupError) {
-      console.error("Failed to clean up partially uploaded poll option images:", cleanupError);
-    }
-
-    const pathsNeedingAnotherCleanupAttempt = cleanupError ? uploadedPaths : [];
-    if (error instanceof PollOptionImageStorageError) {
-      throw new PollOptionImageStorageError(error.message, pathsNeedingAnotherCleanupAttempt);
-    }
-    throw new PollOptionImageStorageError(
-      "Failed to upload poll option images.",
-      pathsNeedingAnotherCleanupAttempt,
     );
   }
 }
