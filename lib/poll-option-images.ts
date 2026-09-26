@@ -2,7 +2,6 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import sharp from "sharp";
 import {
   removePollOptionImages,
 } from "@/lib/poll-option-image-cleanup";
@@ -113,6 +112,10 @@ export async function validateAndEncodeOptionImage(
       `optionImages[${optionIndex}] content does not match its MIME type.`,
     );
   }
+
+  // sharp is a native dependency. Loading it here keeps read-only routes and
+  // text-only mutations independent from the native module at runtime.
+  const { default: sharp } = await import("sharp");
 
   try {
     const metadata = await sharp(input, {
