@@ -411,21 +411,21 @@ export default function Home() {
   }, [rankedCommunityPolls, filteredOfficialPolls]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 selection:bg-blue-500/30">
-      <nav className="sticky top-0 z-50 bg-white/80 dark:bg-[#020617]/80 backdrop-blur-xl border-b border-slate-200 dark:border-white/5">
-        <div className="max-w-[1440px] mx-auto px-4 pr-24 sm:pl-6 sm:pr-28 lg:pl-8 lg:pr-28 py-3 flex items-center gap-5">
-          <Link href="/" className="text-2xl font-black tracking-tighter flex items-center gap-2 text-slate-900 dark:text-white">
+    <div className="min-h-screen w-full min-w-0 max-w-full bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 selection:bg-blue-500/30">
+      <nav className="sticky top-0 z-50 w-full min-w-0 max-w-full border-b border-slate-200 bg-white/80 backdrop-blur-xl dark:border-white/5 dark:bg-[#020617]/80">
+        <div className="mx-auto flex w-full min-w-0 max-w-[1440px] items-center gap-5 px-4 py-3 pr-24 sm:pl-6 sm:pr-28 lg:pl-8 lg:pr-28">
+          <Link href="/" className="flex shrink-0 items-center gap-2 text-2xl font-black tracking-tighter text-slate-900 dark:text-white">
             <span className="bg-blue-600 px-2 py-0.5 rounded text-white">DATA</span>
             <span>HUB.</span>
           </Link>
-          <label className="hidden md:block relative ml-auto w-full max-w-xl">
+          <label className="relative ml-auto hidden min-w-0 w-full max-w-xl md:block">
             <span className="sr-only">투표 검색</span>
             <span aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">⌕</span>
             <input
               type="search"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="w-full rounded-full border border-slate-200 bg-slate-100/80 py-2.5 pl-10 pr-4 text-sm font-semibold outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/5"
+              className="w-full min-w-0 max-w-full rounded-full border border-slate-200 bg-slate-100/80 py-2.5 pl-10 pr-4 text-sm font-semibold outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/5"
               placeholder="재미있는 투표를 찾아보세요"
             />
           </label>
@@ -433,28 +433,28 @@ export default function Home() {
             + 투표 만들기
           </Link>
         </div>
-        <div className="md:hidden px-4 pb-3">
-          <label className="relative block">
+        <div className="w-full min-w-0 max-w-full px-4 pb-3 md:hidden">
+          <label className="relative block min-w-0 max-w-full">
             <span className="sr-only">투표 검색</span>
             <span aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">⌕</span>
             <input
               type="search"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              className="w-full rounded-full border border-slate-200 bg-slate-100 py-2.5 pl-10 pr-4 text-sm font-semibold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/5"
+              className="w-full min-w-0 max-w-full rounded-full border border-slate-200 bg-slate-100 py-2.5 pl-10 pr-4 text-sm font-semibold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/5"
               placeholder="투표 검색"
             />
           </label>
         </div>
       </nav>
 
-      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12 space-y-14 md:space-y-20">
-        <section className="relative overflow-hidden rounded-[2rem] border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-6 shadow-[0_24px_80px_-48px_rgba(37,99,235,0.65)] dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] md:p-10 lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)] lg:items-center lg:gap-12">
+      <main className="mx-auto w-full min-w-0 max-w-[1440px] space-y-14 px-4 py-8 sm:px-6 md:space-y-20 md:py-12 lg:px-8">
+        <section className="relative min-w-0 max-w-full overflow-hidden rounded-[2rem] border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-6 shadow-[0_24px_80px_-48px_rgba(37,99,235,0.65)] dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] md:p-10 lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)] lg:items-center lg:gap-12">
           <div aria-hidden="true" className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
-          <div className="relative space-y-6">
+          <div className="relative min-w-0 space-y-6">
             <div className="space-y-3">
               <p className="inline-flex rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-600 dark:text-blue-300">실시간 투표</p>
-              <h1 className="text-4xl font-black tracking-[-0.04em] leading-[1.08] text-slate-950 dark:text-white md:text-6xl">
+              <h1 className="break-words whitespace-normal text-4xl font-black leading-[1.08] tracking-[-0.04em] text-slate-950 dark:text-white md:text-6xl">
                 사람들은 지금
                 <br className="hidden sm:block" /> 뭘 고르고 있을까?
               </h1>
@@ -472,7 +472,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="relative mt-8 rounded-[1.75rem] border border-white/70 bg-white/90 p-5 shadow-xl shadow-blue-950/10 backdrop-blur dark:border-white/10 dark:bg-slate-950/65 md:p-7 lg:mt-0">
+          <div className="relative mt-8 min-w-0 max-w-full rounded-[1.75rem] border border-white/70 bg-white/90 p-5 shadow-xl shadow-blue-950/10 backdrop-blur dark:border-white/10 dark:bg-slate-950/65 md:p-7 lg:mt-0">
               {featuredBattle ? (
                 <>
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -484,11 +484,11 @@ export default function Home() {
                     </div>
                     <span className="text-xs font-bold text-slate-500">참여자 {featuredBattle.participants.toLocaleString()}명</span>
                   </div>
-                  <h2 className="mt-4 text-2xl font-black leading-snug text-slate-950 dark:text-white md:text-3xl">{featuredBattle.title}</h2>
+                  <h2 className="mt-4 min-w-0 break-words whitespace-normal text-2xl font-black leading-snug text-slate-950 dark:text-white md:text-3xl">{featuredBattle.title}</h2>
                   <PollOptionImagePreview poll={featuredBattle} variant="hero" eager />
                   <div className="mt-5 grid gap-2 sm:grid-cols-2">
                     {featuredBattle.options.slice(0, 4).map((option, index) => (
-                      <div key={`${featuredBattle.id}_${index}`} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold dark:border-white/10 dark:bg-white/5">
+                      <div key={`${featuredBattle.id}_${index}`} className="min-w-0 break-words rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold dark:border-white/10 dark:bg-white/5">
                         <span className="mr-2 text-blue-500">{index + 1}</span>
                         {option}
                       </div>
@@ -525,12 +525,12 @@ export default function Home() {
               지금 조건에 맞는 인기 투표가 없어요. 다른 관심사를 선택해보세요.
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 max-w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
               {popularPolls.map((poll) => (
                 <Link
                   key={poll.id}
                   href={`/vote/${poll.id}`}
-                  className="group flex min-h-52 flex-col rounded-[1.6rem] border border-slate-200 bg-white p-6 transition hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-950/5 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50"
+                  className="group flex min-h-52 min-w-0 max-w-full flex-col rounded-[1.6rem] border border-slate-200 bg-white p-6 transition hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-950/5 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-black text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</span>
@@ -539,7 +539,7 @@ export default function Home() {
                     </span>
                   </div>
                   <PollOptionImagePreview poll={poll} variant="card" />
-                  <h3 className="mt-5 text-xl font-black leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                  <h3 className="mt-5 min-w-0 break-words text-xl font-black leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                   <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-5 text-sm dark:border-white/10">
                     <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
                     <span className="font-black text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">투표하러 가기 →</span>
@@ -560,9 +560,9 @@ export default function Home() {
           ) : risingPolls.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-slate-300 p-8 text-sm text-slate-500 dark:border-white/10">새로 뜨는 투표를 집계하고 있어요.</div>
           ) : (
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid min-w-0 max-w-full gap-4 lg:grid-cols-2">
               {risingPolls.map((poll, index) => (
-                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex items-center gap-4 rounded-3xl border border-slate-200 bg-white p-5 transition hover:border-cyan-500/60 dark:border-white/10 dark:bg-white/[0.04]">
+                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex w-full min-w-0 max-w-full items-center gap-4 rounded-3xl border border-slate-200 bg-white p-5 transition hover:border-cyan-500/60 dark:border-white/10 dark:bg-white/[0.04]">
                   <PollOptionImagePreview
                     poll={poll}
                     variant="compact"
@@ -574,17 +574,17 @@ export default function Home() {
                       <span className="text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</span>
                       <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-300">{isFreshPoll(poll) ? '새로 뜨는 중' : '주목받는 투표'}</span>
                     </div>
-                    <h3 className="mt-1.5 truncate text-base font-black text-slate-950 dark:text-white">{poll.title}</h3>
+                    <h3 className="mt-1.5 min-w-0 break-words whitespace-normal text-base font-black leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                     <p className="mt-1 text-xs text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</p>
                   </div>
-                  <span className="text-blue-500 transition-transform group-hover:translate-x-1">→</span>
+                  <span className="shrink-0 text-blue-500 transition-transform group-hover:translate-x-1">→</span>
                 </Link>
               ))}
             </div>
           )}
         </section>
 
-        <section aria-labelledby="category-heading" className="space-y-5">
+        <section aria-labelledby="category-heading" className="min-w-0 max-w-full space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 id="category-heading" className="text-2xl font-black tracking-tight">관심사로 찾기</h2>
@@ -592,7 +592,7 @@ export default function Home() {
             </div>
             {activeCategory !== '전체' ? <span className="text-sm font-bold text-blue-600 dark:text-blue-300">{activeCategory} 투표 보는 중</span> : null}
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex w-full min-w-0 max-w-full gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {categories.map((category) => (
               <button
                 key={category}
@@ -619,15 +619,15 @@ export default function Home() {
               조건에 맞는 투표가 없어요. <Link href="/create" className="font-black text-blue-500">첫 투표를 만들어보세요.</Link>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 max-w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
               {latestPolls.map((poll) => (
-                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex flex-col rounded-[1.5rem] border border-slate-200 bg-white p-5 transition hover:border-blue-400 hover:bg-blue-50/40 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-blue-500/[0.06]">
+                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-slate-200 bg-white p-5 transition hover:border-blue-400 hover:bg-blue-50/40 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-blue-500/[0.06]">
                   <div className="flex items-center justify-between gap-3 text-xs font-bold">
                     <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-blue-600 dark:text-blue-300">{getInterestCategory(poll)}</span>
                     <span className="text-slate-400">{formatRelativeTime(poll.created_at)}</span>
                   </div>
                   <PollOptionImagePreview poll={poll} variant="card" />
-                  <h3 className="mt-4 text-lg font-black leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                  <h3 className="mt-4 min-w-0 break-words text-lg font-black leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                   <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-xs dark:border-white/10">
                     <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
                     <span className="font-black text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">투표하러 가기 →</span>

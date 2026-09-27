@@ -221,11 +221,15 @@ export async function fetchSeedRows(supabase, ids) {
 
 export function matchesSeedIdentity(existing, expected) {
   return existing.id === expected.id
-    && existing.title === expected.title
+    && matchesSeedContent(existing, expected)
+    && existing.option_image_paths === null;
+}
+
+export function matchesSeedContent(existing, expected) {
+  return existing.title === expected.title
     && existing.category === expected.category
     && JSON.stringify(existing.options) === JSON.stringify(expected.options)
     && (existing.official_fact ?? null) === expected.official_fact
-    && existing.option_image_paths === null
     && existing.edit_lock_mode === expected.edit_lock_mode
     && (existing.edit_lock_minutes ?? null) === expected.edit_lock_minutes
     && (existing.edit_lock_participants ?? null) === expected.edit_lock_participants;

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "seed:polls": "node scripts/seed-polls.mjs",
+    "seed:polls:sync": "node scripts/sync-seed-polls.mjs",
     "seed:polls:remove": "node scripts/remove-seed-polls.mjs",
     "sync:official-stats": "node scripts/sync-official-stats.mjs"
   },
