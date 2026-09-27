@@ -1,0 +1,243 @@
+[
+  {
+    "seedKey": "relationship-contact-style",
+    "interestCategory": "연애·관계",
+    "title": "연락을 자주 하기 vs 만나서 깊게 대화하기",
+    "category": "커뮤니티",
+    "options": ["연락을 자주 하기", "만나서 깊게 대화하기"],
+    "description": "연락 빈도와 만남의 횟수가 비슷하다고 가정하고 골라주세요.",
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "relationship-date-planning",
+    "interestCategory": "연애·관계",
+    "title": "데이트 계획은 미리 vs 당일 즉흥",
+    "category": "커뮤니티",
+    "options": ["미리 계획하기", "당일 즉흥으로 정하기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "relationship-conflict-timing",
+    "interestCategory": "연애·관계",
+    "title": "서운한 일은 바로 말하기 vs 생각 후 말하기",
+    "category": "커뮤니티",
+    "options": ["바로 솔직하게 말하기", "생각을 정리한 뒤 말하기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "relationship-expression-style",
+    "interestCategory": "연애·관계",
+    "title": "기념일 챙기기 vs 평소에 자주 표현하기",
+    "category": "커뮤니티",
+    "options": ["기념일을 특별하게 챙기기", "평소에 자주 표현하기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "relationship-advice-style",
+    "interestCategory": "연애·관계",
+    "title": "친구 고민에는 해결책 vs 공감",
+    "category": "커뮤니티",
+    "options": ["해결책을 함께 찾기", "충분히 듣고 공감하기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "game-one-more-round",
+    "interestCategory": "게임",
+    "title": "롤 한 판 더 vs 그냥 자기",
+    "category": "커뮤니티",
+    "options": ["한 판 더 한다", "오늘은 그냥 잔다"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "game-story-or-competition",
+    "interestCategory": "게임",
+    "title": "게임은 스토리 몰입 vs 경쟁에서 승리",
+    "category": "커뮤니티",
+    "options": ["스토리와 세계관 몰입", "경쟁과 승리의 재미"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "game-solo-or-party",
+    "interestCategory": "게임",
+    "title": "혼자 편하게 플레이 vs 친구와 파티 플레이",
+    "category": "커뮤니티",
+    "options": ["혼자 편하게 플레이", "친구와 파티 플레이"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "game-new-release-timing",
+    "interestCategory": "게임",
+    "title": "신작 게임 바로 구매 vs 할인 기다리기",
+    "category": "커뮤니티",
+    "options": ["출시하자마자 구매", "할인할 때까지 기다리기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "food-jjajang-jjamppong",
+    "interestCategory": "음식",
+    "title": "짜장면 vs 짬뽕",
+    "category": "라이프스타일",
+    "options": ["짜장면", "짬뽕"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "food-cold-noodles",
+    "interestCategory": "음식",
+    "title": "물냉면 vs 비빔냉면",
+    "category": "라이프스타일",
+    "options": ["물냉면", "비빔냉면"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "food-bungeoppang-first-bite",
+    "interestCategory": "음식",
+    "title": "붕어빵은 머리부터 vs 꼬리부터",
+    "category": "라이프스타일",
+    "options": ["머리부터", "꼬리부터"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "food-chicken-style",
+    "interestCategory": "음식",
+    "title": "치킨은 후라이드 vs 양념",
+    "category": "라이프스타일",
+    "options": ["후라이드", "양념"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "food-breakfast-choice",
+    "interestCategory": "음식",
+    "title": "아침은 밥 vs 빵",
+    "category": "라이프스타일",
+    "options": ["든든한 밥", "간편한 빵"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "sports-play-or-watch",
+    "interestCategory": "스포츠",
+    "title": "스포츠는 직접 하기 vs 경기 보기",
+    "category": "라이프스타일",
+    "options": ["직접 하는 재미", "경기를 보는 재미"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "sports-football-baseball",
+    "interestCategory": "스포츠",
+    "title": "주말 경기 한 편, 축구 vs 야구",
+    "category": "라이프스타일",
+    "options": ["축구", "야구"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "sports-workout-time",
+    "interestCategory": "스포츠",
+    "title": "운동은 아침 vs 저녁",
+    "category": "라이프스타일",
+    "options": ["아침 운동", "저녁 운동"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "sports-goal-style",
+    "interestCategory": "스포츠",
+    "title": "운동 목표는 기록 향상 vs 꾸준한 즐거움",
+    "category": "라이프스타일",
+    "options": ["기록과 실력 향상", "꾸준히 즐기는 것"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "tech-iphone-galaxy",
+    "interestCategory": "IT·제품",
+    "title": "아이폰 vs 갤럭시",
+    "category": "IT/테크",
+    "options": ["아이폰", "갤럭시"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "tech-laptop-priority",
+    "interestCategory": "IT·제품",
+    "title": "노트북은 성능 vs 휴대성",
+    "category": "IT/테크",
+    "options": ["성능이 우선", "휴대성이 우선"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "tech-notification-style",
+    "interestCategory": "IT·제품",
+    "title": "알림은 바로 확인 vs 몰아서 확인",
+    "category": "IT/테크",
+    "options": ["바로 확인하기", "정해진 때 몰아서 확인하기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "tech-new-device-timing",
+    "interestCategory": "IT·제품",
+    "title": "새 기기는 출시 직후 vs 충분히 검증된 후",
+    "category": "IT/테크",
+    "options": ["출시 직후 써보기", "충분히 검증된 후 구매"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "entertainment-cinema-home",
+    "interestCategory": "엔터·콘텐츠",
+    "title": "영화는 영화관 vs 집",
+    "category": "커뮤니티",
+    "options": ["영화관에서 몰입", "집에서 편하게"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "entertainment-series-timing",
+    "interestCategory": "엔터·콘텐츠",
+    "title": "시리즈는 완결 후 몰아보기 vs 매주 보기",
+    "category": "커뮤니티",
+    "options": ["완결 후 몰아보기", "공개될 때마다 보기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "entertainment-spoiler",
+    "interestCategory": "엔터·콘텐츠",
+    "title": "작품 보기 전 스포일러, 알고 보기 vs 피하기",
+    "category": "커뮤니티",
+    "options": ["조금 알고 봐도 괜찮다", "최대한 모르고 본다"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "entertainment-music-listening",
+    "interestCategory": "엔터·콘텐츠",
+    "title": "음악은 플레이리스트 vs 앨범 순서대로",
+    "category": "커뮤니티",
+    "options": ["플레이리스트로 듣기", "앨범 순서대로 듣기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "life-travel-plan",
+    "interestCategory": "라이프/가치관",
+    "title": "계획형 여행 vs 즉흥 여행",
+    "category": "라이프스타일",
+    "options": ["계획을 세우는 여행", "흐름대로 가는 여행"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "life-weekend-style",
+    "interestCategory": "라이프/가치관",
+    "title": "주말은 집에서 충전 vs 밖에서 활동",
+    "category": "라이프스타일",
+    "options": ["집에서 푹 쉬기", "밖에서 새로운 활동하기"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "value-spending-priority",
+    "interestCategory": "라이프/가치관",
+    "title": "돈을 쓴다면 경험 vs 오래 쓰는 물건",
+    "category": "사회/경제",
+    "options": ["기억에 남는 경험", "오래 쓰는 좋은 물건"],
+    "editLock": { "mode": "first_vote" }
+  },
+  {
+    "seedKey": "value-decision-style",
+    "interestCategory": "라이프/가치관",
+    "title": "중요한 결정은 직감 vs 꼼꼼한 비교",
+    "category": "사회/경제",
+    "options": ["직감을 믿기", "충분히 비교한 뒤 결정하기"],
+    "editLock": { "mode": "first_vote" }
+  }
+]
