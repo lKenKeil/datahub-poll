@@ -1,5 +1,17 @@
 export type PollOptionVotes = number[];
 
+export type PollEditLockMode =
+  | "first_vote"
+  | "time"
+  | "participants"
+  | "time_or_participants";
+
+export type PollStructuralEditLockReason =
+  | "first_vote"
+  | "time_expired"
+  | "participant_limit"
+  | "has_comments";
+
 export type PollCategory =
   | "학술/통계"
   | "IT/테크"
@@ -27,6 +39,11 @@ export type DbPoll = {
   official_fact?: string;
   option_image_paths?: Array<string | null> | null;
   created_at?: string;
+  edit_lock_mode?: PollEditLockMode;
+  edit_lock_minutes?: number | null;
+  edit_lock_participants?: number | null;
+  structural_edit_allowed?: boolean;
+  structural_edit_lock_reason?: PollStructuralEditLockReason | null;
 };
 
 export type OfficialStatistic = {

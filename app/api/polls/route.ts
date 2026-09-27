@@ -19,6 +19,10 @@ import {
 } from "@/lib/poll-option-image-storage";
 import { createPollOwnerCredential } from "@/lib/poll-owner-token";
 import { getUnicodeCodePointLength } from "@/lib/unicode-length";
+import {
+  parsePollEditLockConfig,
+  type PollEditLockConfig,
+} from "@/lib/poll-edit-lock";
 
 const validCategories = new Set<PollCategory>(["학술/통계", "IT/테크", "사회/경제", "라이프스타일", "커뮤니티"]);
 const MAX_MULTIPART_REQUEST_BYTES = 4_400_000;
@@ -33,6 +37,7 @@ type PollCreateRequest = {
   category: unknown;
   options: unknown;
   officialFact: unknown;
+  editLock: unknown;
   optionImages: Map<number, File>;
 };
 
@@ -113,6 +118,7 @@ async function parsePollCreateRequest(request: Request): Promise<PollCreateReque
       category: raw.category,
       options: raw.options,
       officialFact,
+      editLock: raw.editLock,
       optionImages: new Map(),
     };
   }
@@ -143,6 +149,7 @@ async function parsePollCreateRequest(request: Request): Promise<PollCreateReque
     "officialFact",
     "official_fact",
     "description",
+    "editLock",
   ]);
   const optionImages = new Map<number, File>();
   let approximateBodyBytes = 0;
@@ -183,11 +190,22 @@ async function parsePollCreateRequest(request: Request): Promise<PollCreateReque
     throw new PollCreateRequestError("options must be a JSON string array.");
   }
 
+  const editLockText = getOneFormString(formData, "editLock", false);
+  let editLock: unknown;
+  if (editLockText !== undefined) {
+    try {
+      editLock = JSON.parse(editLockText);
+    } catch {
+      throw new PollCreateRequestError("editLock must contain valid JSON.");
+    }
+  }
+
   return {
     title: getOneFormString(formData, "title"),
     category: getOneFormString(formData, "category"),
     options,
     officialFact: getMultipartOfficialFact(formData),
+    editLock,
     optionImages,
   };
 }
@@ -270,6 +288,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "official_fact must be at most 300 chars." }, { status: 400 });
     }
 
+    const editLockResult = parsePollEditLockConfig(raw.editLock);
+    if (!editLockResult.ok) {
+      return NextResponse.json({ error: editLockResult.error }, { status: 400 });
+    }
+    const editLock: PollEditLockConfig = editLockResult.value;
+
     for (const optionIndex of raw.optionImages.keys()) {
       if (optionIndex < 0 || optionIndex >= rawOptions.length) {
         return NextResponse.json(
@@ -333,6 +357,9 @@ export async function POST(request: Request) {
       p_official_fact: officialFact || null,
       p_option_image_paths: insertPayload.option_image_paths ?? null,
       p_owner_token_hash: ownerCredential.hash,
+      p_edit_lock_mode: editLock.mode,
+      p_edit_lock_minutes: editLock.minutes,
+      p_edit_lock_participants: editLock.participants,
     });
 
     if (error) {
@@ -357,8 +384,21 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       data: uploadedPaths.length > 0
-        ? { id, ownerToken: ownerCredential.token, option_image_paths: insertPayload.option_image_paths }
-        : { id, ownerToken: ownerCredential.token },
+        ? {
+          id,
+          ownerToken: ownerCredential.token,
+          option_image_paths: insertPayload.option_image_paths,
+          edit_lock_mode: editLock.mode,
+          edit_lock_minutes: editLock.minutes,
+          edit_lock_participants: editLock.participants,
+        }
+        : {
+          id,
+          ownerToken: ownerCredential.token,
+          edit_lock_mode: editLock.mode,
+          edit_lock_minutes: editLock.minutes,
+          edit_lock_participants: editLock.participants,
+        },
     }, {
       headers: { "Cache-Control": "no-store" },
     });

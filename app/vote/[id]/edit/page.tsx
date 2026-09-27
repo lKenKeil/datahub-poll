@@ -7,7 +7,12 @@ import { useRouter } from 'next/navigation';
 import { getPollOptionImagePublicUrl, normalizeOptionImagePaths } from '@/lib/poll-option-image-paths';
 import { getStoredPollOwnerToken, removeStoredPollOwnerToken } from '@/lib/poll-owner-storage';
 import { supabase } from '@/lib/supabase';
-import type { CommentRow, DbPoll, PollCategory } from '@/lib/types';
+import type {
+  CommentRow,
+  DbPoll,
+  PollCategory,
+  PollStructuralEditLockReason,
+} from '@/lib/types';
 import { getUnicodeCodePointLength } from '@/lib/unicode-length';
 
 type EditPageParams = { id: string };
@@ -47,9 +52,41 @@ function getMutationErrorMessage(status: number) {
   if (status === 400 || status === 413) return '입력 내용이나 이미지 파일을 확인해주세요.';
   if (status === 403) return '이 투표의 관리 권한을 확인할 수 없습니다.';
   if (status === 404) return '삭제되었거나 존재하지 않는 투표예요.';
-  if (status === 409) return '참여 또는 의견이 생겨 질문·선택지·이미지를 변경할 수 없습니다. 새로고침 후 다시 확인해주세요.';
+  if (status === 409) return '수정 가능 조건이 종료되어 질문·선택지·이미지를 변경할 수 없습니다. 새로고침 후 다시 확인해주세요.';
   if (status === 429) return '요청이 너무 빠릅니다. 잠시 후 다시 시도해주세요.';
   return '요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.';
+}
+
+const STRUCTURAL_LOCK_REASONS = new Set<PollStructuralEditLockReason>([
+  'first_vote',
+  'time_expired',
+  'participant_limit',
+  'has_comments',
+]);
+
+function getStructuralEditDeadline(poll: DbPoll | null) {
+  if (!poll || (poll.edit_lock_mode !== 'time' && poll.edit_lock_mode !== 'time_or_participants')) {
+    return null;
+  }
+  const createdAt = typeof poll.created_at === 'string' ? Date.parse(poll.created_at) : Number.NaN;
+  const minutes = Number(poll.edit_lock_minutes);
+  if (!Number.isFinite(createdAt) || !Number.isInteger(minutes) || minutes < 1) return null;
+  return createdAt + minutes * 60_000;
+}
+
+function getRemainingTimeLabel(remainingMs: number | null) {
+  if (remainingMs === null) return null;
+  if (remainingMs <= 0) return '수정 가능 시간이 지났어요.';
+  if (remainingMs < 60_000) return '1분 미만 남음';
+  return `약 ${Math.ceil(remainingMs / 60_000)}분 남음`;
+}
+
+function getLockReasonLabel(reason: PollStructuralEditLockReason | null) {
+  if (reason === 'first_vote') return '첫 투표가 시작되어 질문과 선택지가 잠겼어요.';
+  if (reason === 'time_expired') return '수정 가능 시간이 지나 질문과 선택지가 잠겼어요.';
+  if (reason === 'participant_limit') return '설정한 참여자 수에 도달해 질문과 선택지가 잠겼어요.';
+  if (reason === 'has_comments') return '의견이 작성되어 질문과 선택지가 잠겼어요.';
+  return '서버에서 구조 수정을 잠근 상태예요.';
 }
 
 export default function EditPollPage({ params }: { params: Promise<EditPageParams> }) {
@@ -60,6 +97,7 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   const imageInputRefs = useRef(new Map<number, HTMLInputElement>());
   const activeImageOptionKeyRef = useRef<number | null>(null);
   const deleteConfirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const resetConfirmButtonRef = useRef<HTMLButtonElement | null>(null);
   const mutationInFlightRef = useRef(false);
 
   const [ownerToken, setOwnerToken] = useState<string | null | undefined>(undefined);
@@ -76,12 +114,59 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [showResetConfirmation, setShowResetConfirmation] = useState(false);
+  const [nowMs, setNowMs] = useState<number | null>(null);
 
-  const isStructureLocked = Boolean(poll && (poll.participants > 0 || commentCount > 0));
+  const structuralDeadlineMs = useMemo(() => getStructuralEditDeadline(poll), [poll]);
+  const clientTimeExpired = Boolean(
+    structuralDeadlineMs !== null
+    && nowMs !== null
+    && nowMs >= structuralDeadlineMs,
+  );
+  const serverAllowsStructuralEdit = poll?.structural_edit_allowed
+    ?? Boolean(poll && poll.participants === 0 && commentCount === 0);
+  const isStructureLocked = Boolean(poll && (!serverAllowsStructuralEdit || clientTimeExpired));
+  const structureLockReason: PollStructuralEditLockReason | null = clientTimeExpired
+    ? 'time_expired'
+    : poll?.structural_edit_lock_reason ?? null;
+  const remainingTimeLabel = getRemainingTimeLabel(
+    structuralDeadlineMs !== null && nowMs !== null ? structuralDeadlineMs - nowMs : null,
+  );
   const selectedImageBytes = useMemo(
     () => options.reduce((total, option) => total + (option.imageFile?.size ?? 0), 0),
     [options],
   );
+  const hasStructuralChanges = useMemo(() => {
+    if (!poll) return false;
+    const nextOptions = options.map((option) => option.text.trim());
+    return title.trim() !== poll.title
+      || JSON.stringify(nextOptions) !== JSON.stringify(poll.options)
+      || imagesChanged;
+  }, [imagesChanged, options, poll, title]);
+  const requiresVoteResetConfirmation = Boolean(
+    poll
+    && !isStructureLocked
+    && poll.participants > 0
+    && hasStructuralChanges,
+  );
+
+  const structureStatusDescription = useMemo(() => {
+    if (!poll) return '';
+    if (isStructureLocked) return getLockReasonLabel(structureLockReason);
+    if (poll.edit_lock_mode === 'time') {
+      return remainingTimeLabel
+        ? `게시 후 ${poll.edit_lock_minutes}분 동안 · ${remainingTimeLabel}`
+        : `게시 후 ${poll.edit_lock_minutes}분 동안`;
+    }
+    if (poll.edit_lock_mode === 'participants') {
+      return `${poll.participants.toLocaleString()}/${Number(poll.edit_lock_participants).toLocaleString()}명 참여`;
+    }
+    if (poll.edit_lock_mode === 'time_or_participants') {
+      const timeText = remainingTimeLabel ?? `${poll.edit_lock_minutes}분 이내`;
+      return `${timeText} · ${poll.participants.toLocaleString()}/${Number(poll.edit_lock_participants).toLocaleString()}명 참여 · 먼저 도달하면 잠김`;
+    }
+    return '첫 투표 전까지';
+  }, [isStructureLocked, poll, remainingTimeLabel, structureLockReason]);
 
   const updateOptions = useCallback((updater: (previous: OptionDraft[]) => OptionDraft[]) => {
     setOptions((previous) => {
@@ -169,6 +254,22 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   useEffect(() => {
     if (showDeleteConfirmation) deleteConfirmButtonRef.current?.focus();
   }, [showDeleteConfirmation]);
+
+  useEffect(() => {
+    if (structuralDeadlineMs === null || poll?.structural_edit_allowed === false) {
+      setNowMs(null);
+      return;
+    }
+
+    const updateNow = () => setNowMs(Date.now());
+    updateNow();
+    const intervalId = window.setInterval(updateNow, 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [poll?.structural_edit_allowed, structuralDeadlineMs]);
+
+  useEffect(() => {
+    if (showResetConfirmation) resetConfirmButtonRef.current?.focus();
+  }, [showResetConfirmation]);
 
   const activateImageTarget = (optionKey: number) => {
     if (isStructureLocked) return;
@@ -318,8 +419,7 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
     optionsRef.current = optionsRef.current.map((option) => ({ ...option, previewUrl: null }));
   };
 
-  const handleSave = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const saveChanges = async (resetConfirmed = false) => {
     if (!ownerToken || !poll || mutationInFlightRef.current) return;
     if (validationMessage) {
       setFeedback({ type: 'error', message: validationMessage });
@@ -329,9 +429,14 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
       setFeedback({ type: 'error', message: '이미지 전체 용량이 너무 큽니다. 파일 크기를 줄여주세요.' });
       return;
     }
+    if (requiresVoteResetConfirmation && !resetConfirmed) {
+      setShowResetConfirmation(true);
+      return;
+    }
 
     mutationInFlightRef.current = true;
     setIsSaving(true);
+    setShowResetConfirmation(false);
     setFeedback(null);
     try {
       const trimmedDescription = description.trim();
@@ -375,7 +480,22 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
         'X-Poll-Owner-Token': ownerToken,
       };
       const response = await fetch(`/api/polls/${encodeURIComponent(id)}`, requestInit);
+      const responseBody = await response.json().catch(() => null) as {
+        structural_edit_lock_reason?: unknown;
+      } | null;
       if (!response.ok) {
+        const responseLockReason = responseBody?.structural_edit_lock_reason;
+        if (
+          response.status === 409
+          && typeof responseLockReason === 'string'
+          && STRUCTURAL_LOCK_REASONS.has(responseLockReason as PollStructuralEditLockReason)
+        ) {
+          setPoll((current) => current ? {
+            ...current,
+            structural_edit_allowed: false,
+            structural_edit_lock_reason: responseLockReason as PollStructuralEditLockReason,
+          } : current);
+        }
         setFeedback({ type: 'error', message: getMutationErrorMessage(response.status) });
         return;
       }
@@ -389,6 +509,11 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
       mutationInFlightRef.current = false;
       setIsSaving(false);
     }
+  };
+
+  const handleSave = (event: React.FormEvent) => {
+    event.preventDefault();
+    void saveChanges(false);
   };
 
   const handleDelete = async () => {
@@ -478,11 +603,29 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
             <p className="mt-3 text-sm font-semibold leading-relaxed text-slate-500 dark:text-slate-300">내용을 수정하거나 더 이상 필요하지 않은 투표를 삭제할 수 있어요.</p>
           </header>
 
-          {isStructureLocked ? (
-            <div id="structure-lock-reason" className="rounded-2xl border border-amber-400/40 bg-amber-50 px-5 py-4 text-sm font-bold leading-relaxed text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-              이미 참여 또는 의견이 있어 질문과 선택지, 이미지는 변경할 수 없습니다. 카테고리와 설명만 수정할 수 있어요.
+          <section
+            id="structure-lock-reason"
+            aria-live="polite"
+            aria-atomic="true"
+            className={`rounded-2xl border px-5 py-4 ${isStructureLocked ? 'border-amber-400/40 bg-amber-50 dark:bg-amber-500/10' : 'border-emerald-400/40 bg-emerald-50 dark:bg-emerald-500/10'}`}
+          >
+            <div className="flex items-start gap-3">
+              <span aria-hidden="true" className="mt-0.5 text-xl">{isStructureLocked ? '🔒' : '✏️'}</span>
+              <div className="min-w-0">
+                <h2 className={`font-black ${isStructureLocked ? 'text-amber-900 dark:text-amber-200' : 'text-emerald-900 dark:text-emerald-200'}`}>
+                  {isStructureLocked ? '구조 수정이 잠겼습니다.' : '구조 수정 가능'}
+                </h2>
+                <p className={`mt-1 break-keep text-sm font-bold leading-relaxed ${isStructureLocked ? 'text-amber-800/90 dark:text-amber-100/80' : 'text-emerald-800/90 dark:text-emerald-100/80'}`}>
+                  {structureStatusDescription}
+                </p>
+                <p className="mt-2 text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-300">
+                  {isStructureLocked
+                    ? '카테고리와 설명은 계속 수정할 수 있어요.'
+                    : '질문·선택지·이미지를 바꾸면 기존 투표 결과가 초기화될 수 있어요.'}
+                </p>
+              </div>
             </div>
-          ) : null}
+          </section>
 
           <section className="rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035] sm:p-7">
             <label htmlFor="edit-poll-title" className="text-lg font-black text-slate-950 dark:text-white">투표 질문</label>
@@ -601,7 +744,40 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
             ) : null}
           </div>
 
-          <button type="submit" disabled={controlsDisabled} className="min-h-14 w-full rounded-2xl bg-blue-600 px-6 text-base font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60">{isSaving ? '저장 중...' : '변경사항 저장'}</button>
+          {showResetConfirmation && requiresVoteResetConfirmation ? (
+            <section
+              role="alertdialog"
+              aria-labelledby="vote-reset-confirm-title"
+              aria-describedby="vote-reset-confirm-description"
+              className="rounded-2xl border border-amber-400/50 bg-amber-50 p-5 dark:bg-amber-500/10"
+            >
+              <h2 id="vote-reset-confirm-title" className="font-black text-amber-900 dark:text-amber-200">기존 투표를 초기화할까요?</h2>
+              <p id="vote-reset-confirm-description" className="mt-2 break-keep text-sm font-semibold leading-relaxed text-amber-800/90 dark:text-amber-100/80">
+                현재 {poll.participants.toLocaleString()}명이 참여했습니다. 질문·선택지·이미지를 변경하면 기존 투표 {poll.participants.toLocaleString()}표가 초기화됩니다.
+              </p>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => setShowResetConfirmation(false)}
+                  disabled={controlsDisabled}
+                  className="min-h-12 flex-1 rounded-xl border border-amber-400 bg-white px-4 text-sm font-black text-amber-900 disabled:opacity-50 dark:bg-slate-950 dark:text-amber-200"
+                >
+                  취소
+                </button>
+                <button
+                  ref={resetConfirmButtonRef}
+                  type="button"
+                  onClick={() => void saveChanges(true)}
+                  disabled={controlsDisabled}
+                  className="min-h-12 flex-1 rounded-xl bg-amber-500 px-4 text-sm font-black text-slate-950 transition hover:bg-amber-400 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isSaving ? '저장 중...' : '초기화하고 저장'}
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          <button type="submit" disabled={controlsDisabled || showResetConfirmation} className="min-h-14 w-full rounded-2xl bg-blue-600 px-6 text-base font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60">{isSaving ? '저장 중...' : '변경사항 저장'}</button>
         </form>
 
         <aside className="min-w-0 space-y-5 lg:sticky lg:top-24 lg:self-start">

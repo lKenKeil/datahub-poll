@@ -5,6 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PollCategory } from '@/lib/types';
+import type { PollEditLockConfig } from '@/lib/poll-edit-lock';
 import { storePollOwnerToken } from '@/lib/poll-owner-storage';
 import { getUnicodeCodePointLength } from '@/lib/unicode-length';
 
@@ -38,6 +39,21 @@ type OwnerTokenFallback = {
   ownerToken: string;
 };
 
+type EditLockPreset =
+  | 'first_vote'
+  | 'time_10'
+  | 'time_30'
+  | 'participants_5'
+  | 'participants_10'
+  | 'time_10_or_participants_5';
+
+type EditLockPresetOption = {
+  value: EditLockPreset;
+  label: string;
+  description: string;
+  config: PollEditLockConfig;
+};
+
 const CATEGORY_OPTIONS: InterestCategoryOption[] = [
   { label: '연애·관계', icon: '💞', description: '연애, 친구, 인간관계', dbValue: '커뮤니티' },
   { label: '게임', icon: '🎮', description: '게임과 플레이 취향', dbValue: '커뮤니티' },
@@ -59,6 +75,44 @@ const MAX_DESCRIPTION_LENGTH = 300;
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_MULTIPART_BYTES = 4_300_000;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const EDIT_LOCK_PRESETS: EditLockPresetOption[] = [
+  {
+    value: 'first_vote',
+    label: '첫 투표 전까지만',
+    description: '첫 참여가 생기면 질문과 선택지가 잠겨요.',
+    config: { mode: 'first_vote', minutes: null, participants: null },
+  },
+  {
+    value: 'time_10',
+    label: '게시 후 10분 동안',
+    description: '참여 여부와 관계없이 게시 후 10분까지 수정할 수 있어요.',
+    config: { mode: 'time', minutes: 10, participants: null },
+  },
+  {
+    value: 'time_30',
+    label: '게시 후 30분 동안',
+    description: '참여 여부와 관계없이 게시 후 30분까지 수정할 수 있어요.',
+    config: { mode: 'time', minutes: 30, participants: null },
+  },
+  {
+    value: 'participants_5',
+    label: '5명 참여 전까지',
+    description: '참여자가 5명에 도달하면 질문과 선택지가 잠겨요.',
+    config: { mode: 'participants', minutes: null, participants: 5 },
+  },
+  {
+    value: 'participants_10',
+    label: '10명 참여 전까지',
+    description: '참여자가 10명에 도달하면 질문과 선택지가 잠겨요.',
+    config: { mode: 'participants', minutes: null, participants: 10 },
+  },
+  {
+    value: 'time_10_or_participants_5',
+    label: '10분 또는 5명 중 먼저 도달할 때까지',
+    description: '시간과 참여자 조건 중 하나라도 먼저 도달하면 잠겨요.',
+    config: { mode: 'time_or_participants', minutes: 10, participants: 5 },
+  },
+];
 
 export default function CreatePollPage() {
   const router = useRouter();
@@ -80,6 +134,7 @@ export default function CreatePollPage() {
   const [activeImageOptionKey, setActiveImageOptionKey] = useState<number | null>(null);
   const [ownerTokenFallback, setOwnerTokenFallback] = useState<OwnerTokenFallback | null>(null);
   const [ownerTokenCopyMessage, setOwnerTokenCopyMessage] = useState('');
+  const [editLockPreset, setEditLockPreset] = useState<EditLockPreset>('first_vote');
 
   const trimmedTitle = title.trim();
   const titleLength = getUnicodeCodePointLength(title);
@@ -93,6 +148,8 @@ export default function CreatePollPage() {
     [options],
   );
   const selectedCategory = CATEGORY_OPTIONS.find((option) => option.label === interestCategory) ?? null;
+  const selectedEditLock = EDIT_LOCK_PRESETS.find((option) => option.value === editLockPreset)
+    ?? EDIT_LOCK_PRESETS[0];
 
   const updateOptions = (updater: (previous: PollOptionDraft[]) => PollOptionDraft[]) => {
     setOptions((previous) => {
@@ -314,6 +371,7 @@ export default function CreatePollPage() {
         formData.append('title', trimmedTitle);
         formData.append('category', selectedCategory.dbValue);
         formData.append('options', JSON.stringify(trimmedOptions));
+        formData.append('editLock', JSON.stringify(selectedEditLock.config));
         if (description.trim()) formData.append('officialFact', description.trim());
         options.forEach((option, index) => {
           if (option.imageFile) formData.append(`optionImages[${index}]`, option.imageFile);
@@ -324,6 +382,7 @@ export default function CreatePollPage() {
           title: trimmedTitle,
           category: selectedCategory.dbValue,
           options: trimmedOptions,
+          editLock: selectedEditLock.config,
         };
         if (description.trim()) payload.official_fact = description.trim();
         requestInit = {
@@ -623,6 +682,48 @@ export default function CreatePollPage() {
               />
               <p className="mt-2 text-right text-xs font-semibold text-slate-500">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
             </section>
+
+            <details className="group rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035] sm:p-7">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30">
+                <div>
+                  <h2 className="text-lg font-black text-slate-950 dark:text-white">고급 설정</h2>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">수정 가능 범위 · {selectedEditLock.label}</p>
+                </div>
+                <span aria-hidden="true" className="text-xl font-black text-blue-600 transition group-open:rotate-45 dark:text-blue-300">+</span>
+              </summary>
+
+              <fieldset className="mt-5 border-t border-slate-200 pt-5 dark:border-white/10">
+                <legend className="text-sm font-black text-slate-900 dark:text-white">질문·선택지·이미지 수정 가능 기간</legend>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {EDIT_LOCK_PRESETS.map((preset) => {
+                    const selected = editLockPreset === preset.value;
+                    return (
+                      <label
+                        key={preset.value}
+                        className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:border-blue-300 dark:border-white/10 dark:bg-white/[0.025]'}`}
+                      >
+                        <input
+                          type="radio"
+                          name="edit-lock-preset"
+                          value={preset.value}
+                          checked={selected}
+                          onChange={() => setEditLockPreset(preset.value)}
+                          disabled={isSubmitting}
+                          className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
+                        />
+                        <span className="min-w-0">
+                          <span className="block text-sm font-black text-slate-900 dark:text-white">{preset.label}</span>
+                          <span className="mt-1 block break-keep text-xs font-semibold leading-relaxed text-slate-500">{preset.description}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold leading-relaxed text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                  수정 가능 기간 안에는 질문·선택지·이미지를 변경할 수 있습니다. 이미 투표가 있는 상태에서 구조를 변경하면 기존 투표는 초기화됩니다.
+                </p>
+              </fieldset>
+            </details>
           </div>
 
           <aside className="min-w-0 space-y-4 lg:sticky lg:top-28">

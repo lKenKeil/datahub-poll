@@ -26,6 +26,10 @@ import {
   PUBLIC_INTERNAL_ERROR_MESSAGE,
 } from "@/lib/public-api-hardening";
 import { getUnicodeCodePointLength } from "@/lib/unicode-length";
+import {
+  getPollStructuralEditState,
+  type PollEditLockMode,
+} from "@/lib/poll-edit-lock";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -51,14 +55,18 @@ type MutablePollRow = {
   official_fact: string | null;
   option_image_paths: unknown;
   created_at?: string;
+  edit_lock_mode?: PollEditLockMode;
+  edit_lock_minutes?: number | null;
+  edit_lock_participants?: number | null;
 };
 
 function isOwnerMutationMigrationMissing(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const record = error as { code?: string; message?: string };
   return record.code === "PGRST202"
-    || ((record.code === "42883" || record.code === "42P01")
-      && Boolean(record.message?.includes("owned_poll") || record.message?.includes("delete_poll_with_dependents")));
+    || (((record.code === "42883" || record.code === "42P01")
+      && Boolean(record.message?.includes("owned_poll") || record.message?.includes("delete_poll_with_dependents")))
+      || (record.code === "42703" && Boolean(record.message?.includes("edit_lock_"))));
 }
 
 function validatePollId(id: string) {
@@ -162,6 +170,7 @@ export async function GET(_: Request, context: Context) {
   }
 
   let viewerVote: { optionIndex: number } | null = null;
+  let hasAnyVotes = Boolean(poll && Number(poll.participants) > 0);
   if (voterId) {
     const supabaseMutation = getSupabaseMutationClient();
     const { data: vote, error: voteError } = await supabaseMutation
@@ -180,11 +189,37 @@ export async function GET(_: Request, context: Context) {
     }
   }
 
+  if (
+    poll
+    && !hasAnyVotes
+    && (!poll.edit_lock_mode || poll.edit_lock_mode === "first_vote")
+  ) {
+    const supabaseMutation = getSupabaseMutationClient();
+    const { data: existingVote, error: existingVoteError } = await supabaseMutation
+      .from("poll_votes")
+      .select("id")
+      .eq("poll_id", id)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingVoteError) {
+      logPublicMutationError("poll-detail-edit-state", existingVoteError);
+      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
+    }
+    hasAnyVotes = Boolean(existingVote);
+  }
+
   const commentRows = (comments ?? []) as Array<Record<string, unknown>>;
   const commentIds = commentRows.map((row) => String(row.id));
+  const pollWithEditState = poll
+    ? {
+      ...poll,
+      ...getPollStructuralEditState(poll, commentRows.length > 0, hasAnyVotes),
+    }
+    : null;
 
   if (commentIds.length === 0) {
-    return NextResponse.json({ poll: poll ?? null, comments: [], viewerVote });
+    return NextResponse.json({ poll: pollWithEditState, comments: [], viewerVote });
   }
 
   const { data: reactions, error: reactionsError } = await supabaseServer
@@ -232,7 +267,7 @@ export async function GET(_: Request, context: Context) {
     };
   });
 
-  return NextResponse.json({ poll: poll ?? null, comments: enriched, viewerVote });
+  return NextResponse.json({ poll: pollWithEditState, comments: enriched, viewerVote });
 }
 
 export async function PATCH(request: Request, context: Context) {
@@ -263,11 +298,17 @@ export async function PATCH(request: Request, context: Context) {
 
     const { data: currentData, error: currentError } = await supabaseMutation
       .from("polls")
-      .select("id,title,category,options,votes,participants,official_fact,option_image_paths,created_at")
+      .select("id,title,category,options,votes,participants,official_fact,option_image_paths,created_at,edit_lock_mode,edit_lock_minutes,edit_lock_participants")
       .eq("id", id)
       .maybeSingle();
 
     if (currentError) {
+      if (isOwnerMutationMigrationMissing(currentError)) {
+        return NextResponse.json(
+          { code: "POLL_OWNER_MUTATION_MIGRATION_REQUIRED", error: OWNER_MUTATION_MIGRATION_MESSAGE },
+          { status: 503 },
+        );
+      }
       logPublicMutationError("poll-owner-update-read", currentError);
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
@@ -436,10 +477,16 @@ export async function PATCH(request: Request, context: Context) {
       uploadedPaths = [];
       if (cleanupError) logPublicMutationError("poll-owner-update-new-image-cleanup", cleanupError);
 
-      const errorRecord = updateError as { code?: string; message?: string };
+      const errorRecord = updateError as { code?: string; message?: string; details?: string };
       if (errorRecord.message === "POLL_STRUCTURE_LOCKED") {
+        const lockReason = typeof errorRecord.details === "string"
+          ? errorRecord.details
+          : undefined;
         return NextResponse.json(
-          { error: "참여 또는 댓글이 있는 투표는 질문·선택지·이미지를 변경할 수 없습니다." },
+          {
+            error: "설정된 수정 가능 조건이 종료되었거나 댓글이 있어 질문·선택지·이미지를 변경할 수 없습니다.",
+            structural_edit_lock_reason: lockReason,
+          },
           { status: 409 },
         );
       }
