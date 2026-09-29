@@ -103,6 +103,32 @@ function getRisingScore(poll: DbPoll) {
   return freshness + participation + (isTightRace(poll.votes) ? 80 : 0);
 }
 
+function getCreatedAtTime(poll: DbPoll) {
+  if (!poll.created_at) return 0;
+  const time = new Date(poll.created_at).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function comparePollIds(a: DbPoll, b: DbPoll) {
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+function compareByCreatedAtDesc(a: DbPoll, b: DbPoll) {
+  const createdAtDifference = getCreatedAtTime(b) - getCreatedAtTime(a);
+  return createdAtDifference || comparePollIds(a, b);
+}
+
+function compareByTrendingScore(a: DbPoll, b: DbPoll) {
+  const scoreDifference = getTrendingScore(b) - getTrendingScore(a);
+  return scoreDifference || compareByCreatedAtDesc(a, b);
+}
+
+function compareByRisingScore(a: DbPoll, b: DbPoll) {
+  const scoreDifference = getRisingScore(b) - getRisingScore(a);
+  return scoreDifference || compareByCreatedAtDesc(a, b);
+}
+
 function formatRelativeTime(value?: string) {
   if (!value) return '방금 전';
   const created = new Date(value);
@@ -347,31 +373,51 @@ export default function Home() {
     });
   }, [dbPolls, activeCategory, normalizedSearch]);
 
-  const rankedCommunityPolls = useMemo(() => {
-    return [...filteredCommunityPolls]
-      .sort((a, b) => getTrendingScore(b) - getTrendingScore(a));
+  const rankedActiveCommunityPolls = useMemo(() => {
+    return filteredCommunityPolls
+      .filter((poll) => (poll.participants ?? 0) > 0)
+      .sort(compareByTrendingScore);
   }, [filteredCommunityPolls]);
 
-  const popularPolls = useMemo(() => rankedCommunityPolls.slice(0, 6), [rankedCommunityPolls]);
+  const latestCommunityPolls = useMemo(() => {
+    return [...filteredCommunityPolls].sort(compareByCreatedAtDesc);
+  }, [filteredCommunityPolls]);
+
+  const featuredCommunityPoll = rankedActiveCommunityPolls[0]
+    ?? latestCommunityPolls[0]
+    ?? null;
+
+  const popularPolls = useMemo(() => {
+    return rankedActiveCommunityPolls
+      .filter((poll) => poll.id !== featuredCommunityPoll?.id)
+      .slice(0, 6);
+  }, [featuredCommunityPoll?.id, rankedActiveCommunityPolls]);
 
   const risingPolls = useMemo(() => {
-    const popularIds = new Set(popularPolls.map((poll) => poll.id));
-    const distinctCandidates = filteredCommunityPolls.filter((poll) => !popularIds.has(poll.id));
-    const candidates = distinctCandidates.length > 0
-      ? distinctCandidates
-      : filteredCommunityPolls.filter((poll) => poll.id !== rankedCommunityPolls[0]?.id);
-    return [...candidates]
-      .sort((a, b) => getRisingScore(b) - getRisingScore(a))
+    const shownIds = new Set([
+      ...(featuredCommunityPoll ? [featuredCommunityPoll.id] : []),
+      ...popularPolls.map((poll) => poll.id),
+    ]);
+    return filteredCommunityPolls
+      .filter((poll) => (
+        (poll.participants ?? 0) > 0
+        && isFreshPoll(poll)
+        && !shownIds.has(poll.id)
+      ))
+      .sort(compareByRisingScore)
       .slice(0, 4);
-  }, [filteredCommunityPolls, popularPolls, rankedCommunityPolls]);
+  }, [featuredCommunityPoll, filteredCommunityPolls, popularPolls]);
 
   const latestPolls = useMemo(() => {
-    return [...filteredCommunityPolls].sort((a, b) => {
-      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return bTime - aTime;
-    });
-  }, [filteredCommunityPolls]);
+    const shownIds = new Set([
+      ...(featuredCommunityPoll ? [featuredCommunityPoll.id] : []),
+      ...popularPolls.map((poll) => poll.id),
+      ...risingPolls.map((poll) => poll.id),
+    ]);
+    return latestCommunityPolls
+      .filter((poll) => !shownIds.has(poll.id))
+      .slice(0, 8);
+  }, [featuredCommunityPoll, latestCommunityPolls, popularPolls, risingPolls]);
 
   const filteredOfficialStats = useMemo(() => {
     return officialStats.filter((stat) => {
@@ -383,16 +429,15 @@ export default function Home() {
   }, [officialStats, activeCategory, normalizedSearch]);
 
   const featuredBattle = useMemo<FeaturedBattle | null>(() => {
-    if (rankedCommunityPolls.length > 0) {
-      const top = rankedCommunityPolls[0];
+    if (featuredCommunityPoll) {
       return {
-        id: top.id,
-        title: top.title,
-        category: getInterestCategory(top),
-        options: top.options,
-        participants: top.participants || 0,
+        id: featuredCommunityPoll.id,
+        title: featuredCommunityPoll.title,
+        category: getInterestCategory(featuredCommunityPoll),
+        options: featuredCommunityPoll.options,
+        participants: featuredCommunityPoll.participants || 0,
         official: false,
-        option_image_paths: top.option_image_paths,
+        option_image_paths: featuredCommunityPoll.option_image_paths,
       };
     }
     if (filteredOfficialPolls.length > 0) {
@@ -408,7 +453,7 @@ export default function Home() {
       };
     }
     return null;
-  }, [rankedCommunityPolls, filteredOfficialPolls]);
+  }, [featuredCommunityPoll, filteredOfficialPolls]);
 
   return (
     <div className="min-h-screen w-full min-w-0 max-w-full bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 selection:bg-blue-500/30">
@@ -478,7 +523,11 @@ export default function Home() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-orange-500/15 px-2.5 py-1 text-[11px] font-black text-orange-600 dark:text-orange-300">
-                        {featuredBattle.official ? '오늘의 투표' : 'HOT'}
+                        {featuredBattle.official
+                          ? '오늘의 투표'
+                          : featuredBattle.participants > 0
+                            ? 'HOT'
+                            : '오늘의 질문'}
                       </span>
                       <span className="text-xs font-bold text-blue-600 dark:text-cyan-300">{featuredBattle.category}</span>
                     </div>
@@ -510,6 +559,7 @@ export default function Home() {
           </div>
         </section>
 
+        {loading || popularPolls.length > 0 ? (
         <section id="popular-polls" className="scroll-mt-32 space-y-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -520,10 +570,6 @@ export default function Home() {
           </div>
           {loading ? (
             <div className="text-sm font-bold text-slate-500">인기 투표를 불러오는 중...</div>
-          ) : popularPolls.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-300 bg-white/50 p-8 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.02]">
-              지금 조건에 맞는 인기 투표가 없어요. 다른 관심사를 선택해보세요.
-            </div>
           ) : (
             <div className="grid min-w-0 max-w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
               {popularPolls.map((poll) => (
@@ -549,7 +595,9 @@ export default function Home() {
             </div>
           )}
         </section>
+        ) : null}
 
+        {loading || risingPolls.length > 0 ? (
         <section className="space-y-6">
           <div>
             <h2 className="text-2xl font-black tracking-tight md:text-3xl">📈 지금 뜨는 투표</h2>
@@ -557,8 +605,6 @@ export default function Home() {
           </div>
           {loading ? (
             <div className="text-sm font-bold text-slate-500">급상승 투표를 불러오는 중...</div>
-          ) : risingPolls.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-slate-300 p-8 text-sm text-slate-500 dark:border-white/10">새로 뜨는 투표를 집계하고 있어요.</div>
           ) : (
             <div className="grid min-w-0 max-w-full gap-4 lg:grid-cols-2">
               {risingPolls.map((poll, index) => (
@@ -583,6 +629,7 @@ export default function Home() {
             </div>
           )}
         </section>
+        ) : null}
 
         <section aria-labelledby="category-heading" className="min-w-0 max-w-full space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
