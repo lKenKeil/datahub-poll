@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { getPollOptionImagePublicUrl, normalizeOptionImagePaths } from '@/lib/poll-option-image-paths';
 import { getStoredPollOwnerToken, removeStoredPollOwnerToken } from '@/lib/poll-owner-storage';
 import { supabase } from '@/lib/supabase';
@@ -557,15 +558,15 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   if (!ownerToken) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-20 text-slate-900 dark:bg-[#020617] dark:text-white">
-        <section className="w-full max-w-xl rounded-[2rem] border border-slate-200 bg-white p-7 text-center shadow-xl shadow-slate-950/[0.04] dark:border-white/10 dark:bg-white/[0.035] sm:p-10">
+        <section className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 text-center shadow-xl shadow-slate-950/[0.04] dark:border-white/10 dark:bg-white/[0.035] sm:p-8">
           <span aria-hidden="true" className="text-4xl">🔐</span>
           <h1 className="mt-4 text-2xl font-black">관리 권한이 없어요</h1>
           <p className="mt-3 break-keep text-sm font-semibold leading-relaxed text-slate-500 dark:text-slate-300">
             이 브라우저에 이 투표의 관리 권한이 없습니다. 브라우저 데이터가 삭제되었거나 다른 기기라면 로그인 없는 관리 권한은 복구할 수 없어요.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <Link href={`/vote/${encodeURIComponent(id)}`} className="flex-1 rounded-full bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-500">투표로 돌아가기</Link>
-            <Link href="/" className="flex-1 rounded-full border border-slate-300 px-5 py-3 text-sm font-black transition hover:border-blue-500 hover:text-blue-600 dark:border-white/15">홈으로</Link>
+            <Link href={`/vote/${encodeURIComponent(id)}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-500">투표로 돌아가기</Link>
+            <Link href="/" className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold transition hover:border-blue-500 hover:text-blue-600 dark:border-white/15">홈으로</Link>
           </div>
         </section>
       </main>
@@ -575,10 +576,10 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   if (!poll) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-20 text-slate-900 dark:bg-[#020617] dark:text-white">
-        <section className="w-full max-w-xl rounded-[2rem] border border-slate-200 bg-white p-7 text-center dark:border-white/10 dark:bg-white/[0.035]">
+        <section className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 text-center dark:border-white/10 dark:bg-white/[0.035] sm:p-8">
           <h1 className="text-2xl font-black">투표를 불러올 수 없어요</h1>
           <p role="alert" className="mt-3 text-sm font-semibold text-rose-600 dark:text-rose-300">{feedback?.message ?? '잠시 후 다시 시도해주세요.'}</p>
-          <Link href="/" className="mt-6 inline-flex rounded-full bg-blue-600 px-6 py-3 text-sm font-black text-white">홈으로</Link>
+          <Link href="/" className="mt-6 inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-6 py-3 text-sm font-black text-white">홈으로</Link>
         </section>
       </main>
     );
@@ -589,18 +590,21 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   return (
     <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-slate-50 pb-24 text-slate-900 dark:bg-[#020617] dark:text-slate-100">
       <nav className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur-xl dark:border-white/5 dark:bg-[#020617]/85">
-        <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-          <Link href={`/vote/${encodeURIComponent(id)}`} className="text-sm font-black text-slate-500 transition hover:text-blue-600 dark:hover:text-white">← 투표로 돌아가기</Link>
-          <span className="text-sm font-black text-slate-900 dark:text-white">내 투표 관리</span>
+        <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
+          <Link href={`/vote/${encodeURIComponent(id)}`} className="inline-flex min-h-11 items-center text-sm font-bold text-slate-600 transition hover:text-blue-600 dark:text-slate-400 dark:hover:text-white">← 투표로 돌아가기</Link>
+          <div className="flex items-center gap-2">
+            <span className="hidden text-sm font-bold text-slate-900 dark:text-white sm:inline">내 투표 관리</span>
+            <ThemeToggle />
+          </div>
         </div>
       </nav>
 
-      <div className="mx-auto grid max-w-[1280px] min-w-0 gap-6 px-4 pt-8 sm:px-6 md:pt-12 lg:grid-cols-[minmax(0,1fr)_340px] lg:px-8">
+      <div className="mx-auto grid max-w-[1280px] min-w-0 gap-5 px-4 pt-6 sm:px-6 md:pt-8 lg:grid-cols-[minmax(0,1fr)_340px] lg:px-8">
         <form onSubmit={handleSave} aria-busy={isSaving} className="min-w-0 space-y-5">
-          <header className="rounded-[2rem] border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-6 dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] sm:p-8">
+          <header className="rounded-3xl border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-5 dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] sm:p-6">
             <span className="inline-flex rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">투표 수정</span>
             <h1 className="mt-4 text-3xl font-black tracking-[-0.035em] text-slate-950 dark:text-white">내 투표를 관리하세요</h1>
-            <p className="mt-3 text-sm font-semibold leading-relaxed text-slate-500 dark:text-slate-300">내용을 수정하거나 더 이상 필요하지 않은 투표를 삭제할 수 있어요.</p>
+            <p className="mt-3 text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">내용을 수정하거나 더 이상 필요하지 않은 투표를 삭제할 수 있어요.</p>
           </header>
 
           <section
@@ -612,7 +616,7 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
             <div className="flex items-start gap-3">
               <span aria-hidden="true" className="mt-0.5 text-xl">{isStructureLocked ? '🔒' : '✏️'}</span>
               <div className="min-w-0">
-                <h2 className={`font-black ${isStructureLocked ? 'text-amber-900 dark:text-amber-200' : 'text-emerald-900 dark:text-emerald-200'}`}>
+                <h2 className={`font-bold ${isStructureLocked ? 'text-amber-900 dark:text-amber-200' : 'text-emerald-900 dark:text-emerald-200'}`}>
                   {isStructureLocked ? '구조 수정이 잠겼습니다.' : '구조 수정 가능'}
                 </h2>
                 <p className={`mt-1 break-keep text-sm font-bold leading-relaxed ${isStructureLocked ? 'text-amber-800/90 dark:text-amber-100/80' : 'text-emerald-800/90 dark:text-emerald-100/80'}`}>
@@ -627,37 +631,37 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
             </div>
           </section>
 
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035] sm:p-7">
-            <label htmlFor="edit-poll-title" className="text-lg font-black text-slate-950 dark:text-white">투표 질문</label>
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-6">
+            <label htmlFor="edit-poll-title" className="text-lg font-bold text-slate-950 dark:text-white">투표 질문</label>
             <input
               id="edit-poll-title"
               value={title}
               onChange={(event) => { setTitle(event.target.value); setFeedback(null); }}
               disabled={controlsDisabled || isStructureLocked}
               aria-describedby={isStructureLocked ? 'structure-lock-reason edit-title-count' : 'edit-title-count'}
-              className="mt-4 w-full rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 text-base font-bold outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-white"
+              className="mt-4 w-full rounded-xl border-2 border-slate-200 bg-slate-50 p-4 text-base font-bold outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-white"
             />
-            <p id="edit-title-count" className="mt-2 text-right text-xs font-semibold text-slate-400">{getUnicodeCodePointLength(title)}/{MAX_TITLE_LENGTH}</p>
+            <p id="edit-title-count" className="mt-2 text-right text-xs font-medium text-slate-600 dark:text-slate-400">{getUnicodeCodePointLength(title)}/{MAX_TITLE_LENGTH}</p>
           </section>
 
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035] sm:p-7">
-            <h2 className="text-lg font-black text-slate-950 dark:text-white">카테고리</h2>
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-6">
+            <h2 className="text-lg font-bold text-slate-950 dark:text-white">카테고리</h2>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {CATEGORY_OPTIONS.map((item) => (
-                <label key={item.value} className={`cursor-pointer rounded-2xl border p-4 transition ${category === item.value ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:border-blue-300 dark:border-white/10 dark:bg-white/[0.025]'}`}>
+                <label key={item.value} className={`cursor-pointer rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-blue-500/40 ${category === item.value ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:border-blue-300 dark:border-white/10 dark:bg-white/[0.025]'}`}>
                   <input type="radio" name="category" value={item.value} checked={category === item.value} onChange={() => setCategory(item.value)} disabled={controlsDisabled} className="sr-only" />
-                  <span className="block text-sm font-black">{item.label}</span>
-                  <span className="mt-1 block text-xs font-semibold text-slate-500">{item.description}</span>
+                  <span className="block text-sm font-bold">{item.label}{category === item.value ? ' · 선택됨' : ''}</span>
+                  <span className="mt-1 block text-xs font-medium text-slate-600 dark:text-slate-400">{item.description}</span>
                 </label>
               ))}
             </div>
           </section>
 
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035] sm:p-7">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-slate-950 dark:text-white">선택지</h2>
-                <p className="mt-1 text-xs font-semibold text-slate-500">JPG, PNG, WebP · 파일당 최대 2MB</p>
+                <h2 className="text-lg font-bold text-slate-950 dark:text-white">선택지</h2>
+                <p className="mt-1 text-xs font-medium text-slate-600 dark:text-slate-400">JPG, PNG, WebP · 파일당 최대 2MB</p>
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500 dark:bg-white/5">{options.length}/{MAX_OPTIONS}</span>
             </div>
@@ -676,8 +680,8 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
                     className={`min-w-0 rounded-2xl border bg-slate-50 p-3 transition dark:bg-white/[0.025] sm:p-4 ${activeImageOptionKey === option.key && !isStructureLocked ? 'border-blue-400 ring-2 ring-blue-500/10' : 'border-slate-200 dark:border-white/10'}`}
                   >
                     <div className="mb-2 flex items-center justify-between gap-3">
-                      <label htmlFor={`edit-option-${index}`} className="text-sm font-black">선택지 {index + 1}</label>
-                      <span className="text-xs font-semibold text-slate-400">{getUnicodeCodePointLength(option.text)}/{MAX_OPTION_LENGTH}</span>
+                      <label htmlFor={`edit-option-${index}`} className="text-sm font-bold">선택지 {index + 1}</label>
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{getUnicodeCodePointLength(option.text)}/{MAX_OPTION_LENGTH}</span>
                     </div>
                     <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
                       <input
@@ -722,20 +726,20 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
                       >
                         <span className="block">+ 이미지 추가</span>
                         <span className="mt-1 block text-xs font-semibold text-slate-500">이미지를 붙여넣거나 파일을 선택하세요</span>
-                        <span className="mt-1 hidden text-[11px] font-semibold text-slate-400 sm:block">Ctrl+V 또는 Cmd+V로 이미지 붙여넣기</span>
+                        <span className="mt-1 hidden text-xs font-medium text-slate-600 dark:text-slate-400 sm:block">Ctrl+V 또는 Cmd+V로 이미지 붙여넣기</span>
                       </button>
                     )}
                   </div>
                 );
               })}
             </div>
-            <button type="button" onClick={addOption} disabled={controlsDisabled || isStructureLocked || options.length >= MAX_OPTIONS} className="mt-4 min-h-12 w-full rounded-2xl border border-dashed border-blue-400 px-4 text-sm font-black text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 dark:border-blue-500/40 dark:text-blue-300 dark:hover:bg-blue-500/10">+ 선택지 추가</button>
+            <button type="button" onClick={addOption} disabled={controlsDisabled || isStructureLocked || options.length >= MAX_OPTIONS} className="mt-4 min-h-12 w-full rounded-xl border border-dashed border-blue-400 px-4 text-sm font-bold text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 dark:border-blue-500/40 dark:text-blue-300 dark:hover:bg-blue-500/10">+ 선택지 추가</button>
           </section>
 
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035] sm:p-7">
-            <label htmlFor="edit-description" className="text-lg font-black text-slate-950 dark:text-white">설명 또는 참고정보 <span className="text-sm text-slate-400">(선택)</span></label>
-            <textarea id="edit-description" value={description} onChange={(event) => { setDescription(event.target.value); setFeedback(null); }} disabled={controlsDisabled} rows={5} className="mt-4 w-full resize-y rounded-2xl border-2 border-slate-200 bg-slate-50 p-4 font-semibold leading-relaxed outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5" placeholder="투표에 필요한 배경이나 조건이 있다면 적어주세요." />
-            <p className="mt-2 text-right text-xs font-semibold text-slate-400">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-6">
+            <label htmlFor="edit-description" className="text-lg font-bold text-slate-950 dark:text-white">설명 또는 참고정보 <span className="text-sm font-medium text-slate-600 dark:text-slate-400">(선택)</span></label>
+            <textarea id="edit-description" value={description} onChange={(event) => { setDescription(event.target.value); setFeedback(null); }} disabled={controlsDisabled} rows={5} className="mt-4 w-full resize-y rounded-xl border-2 border-slate-200 bg-slate-50 p-4 font-medium leading-relaxed outline-none transition focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-white/5" placeholder="투표에 필요한 배경이나 조건이 있다면 적어주세요." />
+            <p className="mt-2 text-right text-xs font-medium text-slate-600 dark:text-slate-400">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
           </section>
 
           <div aria-live="polite" aria-atomic="true">
@@ -777,21 +781,21 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
             </section>
           ) : null}
 
-          <button type="submit" disabled={controlsDisabled || showResetConfirmation} className="min-h-14 w-full rounded-2xl bg-blue-600 px-6 text-base font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60">{isSaving ? '저장 중...' : '변경사항 저장'}</button>
+          <button type="submit" disabled={controlsDisabled || showResetConfirmation} className="min-h-14 w-full rounded-xl bg-blue-600 px-6 text-base font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60">{isSaving ? '저장 중...' : '변경사항 저장'}</button>
         </form>
 
         <aside className="min-w-0 space-y-5 lg:sticky lg:top-24 lg:self-start">
-          <section className="rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035]">
-            <h2 className="font-black text-slate-950 dark:text-white">현재 상태</h2>
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035]">
+            <h2 className="font-bold text-slate-950 dark:text-white">현재 상태</h2>
             <dl className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-1">
               <div className="rounded-2xl bg-slate-100 p-4 dark:bg-white/5"><dt className="text-xs font-bold text-slate-500">참여자</dt><dd className="mt-1 text-lg font-black">{poll.participants.toLocaleString()}명</dd></div>
               <div className="rounded-2xl bg-slate-100 p-4 dark:bg-white/5"><dt className="text-xs font-bold text-slate-500">의견</dt><dd className="mt-1 text-lg font-black">{commentCount}개</dd></div>
             </dl>
-            <p className="mt-4 text-xs font-semibold leading-relaxed text-slate-500">실제 권한과 수정 가능 여부는 저장할 때 서버에서 다시 확인합니다.</p>
+            <p className="mt-4 text-xs font-medium leading-relaxed text-slate-600 dark:text-slate-400">실제 권한과 수정 가능 여부는 저장할 때 서버에서 다시 확인합니다.</p>
           </section>
 
-          <section className="rounded-[2rem] border border-rose-300/70 bg-rose-50 p-5 dark:border-rose-500/25 dark:bg-rose-500/10" aria-busy={isDeleting}>
-            <h2 className="font-black text-rose-900 dark:text-rose-200">투표 삭제</h2>
+          <section className="rounded-3xl border border-rose-300/70 bg-rose-50 p-5 dark:border-rose-500/25 dark:bg-rose-500/10" aria-busy={isDeleting}>
+            <h2 className="font-bold text-rose-900 dark:text-rose-200">투표 삭제</h2>
             <p className="mt-2 text-sm font-semibold leading-relaxed text-rose-800/80 dark:text-rose-100/70">투표와 의견, 이미지가 함께 삭제되며 이 작업은 되돌릴 수 없습니다.</p>
             {!showDeleteConfirmation ? (
               <button type="button" onClick={() => setShowDeleteConfirmation(true)} disabled={controlsDisabled} className="mt-5 min-h-12 w-full rounded-xl border border-rose-400 bg-white px-4 text-sm font-black text-rose-600 transition hover:bg-rose-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-50 dark:bg-transparent">투표 삭제</button>

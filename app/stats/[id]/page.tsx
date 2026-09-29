@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase-server";
 import { OfficialStatistic } from "@/lib/types";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 type Params = { id: string };
 type YearPoint = { year: string; value: number };
@@ -136,12 +137,15 @@ export default async function OfficialStatisticPage({
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 pb-20">
       <div className="max-w-4xl mx-auto px-6 pt-10 space-y-8">
-        <Link
-          href="/"
-          className="inline-flex items-center rounded-full border border-slate-300 dark:border-white/15 px-4 py-2 text-sm font-bold hover:border-blue-500/50"
-        >
-          ← 홈으로
-        </Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href="/"
+            className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold hover:border-blue-500/50 dark:border-white/15"
+          >
+            ← 홈으로
+          </Link>
+          <ThemeToggle />
+        </div>
 
         <section className="rounded-3xl border border-cyan-500/25 bg-white dark:bg-white/[0.03] p-8 space-y-5">
           <div className="flex items-center justify-between gap-3">

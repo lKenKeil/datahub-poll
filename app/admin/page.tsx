@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { ThemeToggle } from '@/components/theme-toggle';
 
 type AdminPoll = {
   id: string;
@@ -124,9 +125,12 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
-          <Link href="/" className="text-sm font-bold hover:text-blue-500">← 홈으로</Link>
-          <span className="text-xs font-black tracking-wider text-slate-500">ADMIN PANEL</span>
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/" className="inline-flex min-h-11 items-center text-sm font-bold hover:text-blue-500">← 홈으로</Link>
+          <div className="flex items-center gap-2">
+            <span className="hidden text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 sm:inline">ADMIN PANEL</span>
+            <ThemeToggle />
+          </div>
         </div>
 
         <section className="rounded-3xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.03] p-6 space-y-4">
