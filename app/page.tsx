@@ -39,6 +39,59 @@ const categories: HomeCategory[] = [
   '데이터',
 ];
 
+const categoryDisplay: Record<HomeCategory, { label: string; description: string; intro: string }> = {
+  '전체': {
+    label: '전체',
+    description: '정답은 없지만 자꾸 궁금해지는 질문들',
+    intro: '사람들은 이런 걸 궁금해했어요.',
+  },
+  '연애/관계': {
+    label: '연애·관계',
+    description: '사람 사이엔 늘 궁금한 게 많아요',
+    intro: '연애·관계에서 사람들이 궁금해한 것들',
+  },
+  '게임': {
+    label: '게임',
+    description: '게이머들은 은근 많이 갈려요',
+    intro: '게임에서 의견이 갈린 질문들',
+  },
+  '스포츠': {
+    label: '스포츠',
+    description: '응원과 플레이 취향을 나눠보세요',
+    intro: '스포츠를 즐기는 사람들의 선택',
+  },
+  '음식': {
+    label: '음식',
+    description: '먹는 취향은 생각보다 잘 갈려요',
+    intro: '음식 취향이 갈린 질문들',
+  },
+  '엔터/콘텐츠': {
+    label: '엔터·콘텐츠',
+    description: '보고 듣는 취향은 저마다 달라요',
+    intro: '콘텐츠 취향을 묻는 질문들',
+  },
+  'IT/제품': {
+    label: 'IT·제품',
+    description: '매일 쓰는 제품일수록 선택이 갈려요',
+    intro: '기술과 제품을 고르는 사람들의 기준',
+  },
+  '라이프': {
+    label: '라이프',
+    description: '사소하지만 은근 궁금한 것들',
+    intro: '일상에서 문득 궁금해진 질문들',
+  },
+  '가치관': {
+    label: '가치관',
+    description: '정답은 없지만 생각은 갈리는 질문',
+    intro: '서로 다른 생각을 확인하는 질문들',
+  },
+  '데이터': {
+    label: '데이터',
+    description: '선택 뒤의 흐름도 함께 살펴봐요',
+    intro: '데이터로 확인해보는 질문과 흐름',
+  },
+};
+
 type CategorySource = {
   title: string;
   category?: string | null;
@@ -506,6 +559,19 @@ export default function Home() {
     return null;
   }, [featuredCommunityPoll, filteredOfficialPolls]);
 
+  const activeCategoryDisplay = categoryDisplay[activeCategory];
+  const latestSectionTitle = activeCategory === '전체'
+    ? '새로 올라온 투표'
+    : `${activeCategoryDisplay.label} 질문`;
+  const latestSectionDescription = activeCategory === '전체'
+    ? '방금 만들어진 투표부터 확인해보세요.'
+    : `${activeCategoryDisplay.label}에서 사람들이 최근 궁금해한 것들이에요.`;
+  const emptyLatestTitle = normalizedSearch
+    ? `“${searchTerm.trim()}”과 맞는 질문을 찾지 못했어요.`
+    : activeCategory === '전체'
+      ? '아직 새로 소개할 질문이 없어요.'
+      : `아직 ${activeCategoryDisplay.label}엔 질문이 많지 않아요.`;
+
   return (
     <div className="min-h-screen w-full min-w-0 max-w-full bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 selection:bg-blue-500/30">
       <nav className="sticky top-0 z-50 w-full min-w-0 max-w-full border-b border-slate-200 bg-white/80 backdrop-blur-xl dark:border-white/5 dark:bg-[#020617]/80">
@@ -677,39 +743,59 @@ export default function Home() {
         </section>
         ) : null}
 
-        <section aria-labelledby="category-heading" className="min-w-0 max-w-full space-y-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 id="category-heading" className="text-2xl font-bold tracking-tight">관심사로 찾기</h2>
-              <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-400">내가 좋아하는 주제만 모아보세요.</p>
-            </div>
-            {activeCategory !== '전체' ? <span className="text-sm font-bold text-blue-600 dark:text-blue-300">{activeCategory} 투표 보는 중</span> : null}
+        <section aria-labelledby="category-heading" className="min-w-0 max-w-full space-y-4">
+          <div>
+            <h2 id="category-heading" className="text-2xl font-bold tracking-tight">주제별로 둘러보기</h2>
+            <p className="mt-1.5 text-sm text-slate-600 dark:text-slate-400">뭐가 궁금해요? 다음 질문의 주제를 골라보세요.</p>
           </div>
-          <div className="flex w-full min-w-0 max-w-full gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {categories.map((category) => (
-              <button
-                key={category}
-                type="button"
-                onClick={() => setActiveCategory(category)}
-                aria-pressed={activeCategory === category}
-                className={`min-h-11 shrink-0 rounded-xl border px-4 py-2.5 text-sm font-bold transition ${activeCategory === category ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-400 hover:text-blue-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'}`}
-              >
-                {category}
-              </button>
-            ))}
+          <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)] lg:items-center">
+            <div className="relative min-w-0 max-w-full overflow-hidden">
+              <div aria-label="질문 카테고리" className="flex w-full min-w-0 max-w-full gap-2 overflow-x-auto pb-2 pr-12 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-wrap md:overflow-visible md:pr-0">
+                {categories.map((category) => {
+                  const isActive = activeCategory === category;
+                  const display = categoryDisplay[category];
+                  const isDataCategory = category === '데이터';
+                  return (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() => setActiveCategory(category)}
+                      aria-pressed={isActive}
+                      aria-controls="latest-polls"
+                      aria-label={`${display.label}: ${display.description}`}
+                      className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${isActive ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-600/20' : isDataCategory ? 'border-dashed border-slate-300 bg-transparent text-slate-500 hover:border-blue-400 hover:text-blue-600 dark:border-white/20 dark:text-slate-400' : 'border-slate-200 bg-white text-slate-700 hover:border-blue-400 hover:text-blue-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'}`}
+                    >
+                      {isActive ? <span aria-hidden="true" className="text-xs">✓</span> : null}
+                      {display.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-slate-50 via-slate-50/95 to-transparent dark:from-[#020617] dark:via-[#020617]/95 md:hidden" />
+            </div>
+            <div aria-live="polite" className="min-w-0 border-l-2 border-blue-500/30 pl-3">
+              <p className="text-sm font-bold text-slate-900 dark:text-white">{activeCategoryDisplay.intro}</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{activeCategoryDisplay.description}</p>
+            </div>
           </div>
         </section>
 
         <section id="latest-polls" className="space-y-5">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">새로 올라온 투표</h2>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">방금 만들어진 투표부터 확인해보세요.</p>
+            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{latestSectionTitle}</h2>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{latestSectionDescription}</p>
           </div>
           {loading ? (
             <div className="text-sm font-bold text-slate-500">최신 투표를 불러오는 중...</div>
           ) : latestPolls.length === 0 ? (
-            <div className="rounded-3xl border border-slate-200 bg-white/50 p-8 text-sm text-slate-500 dark:border-white/10 dark:bg-white/[0.02]">
-              조건에 맞는 투표가 없어요. <Link href="/create" className="font-black text-blue-500">첫 투표를 만들어보세요.</Link>
+            <div className="rounded-2xl border border-slate-200 bg-white/50 p-6 text-sm text-slate-600 dark:border-white/10 dark:bg-white/[0.02] dark:text-slate-400">
+              <p className="font-bold text-slate-900 dark:text-white">
+                {filteredCommunityPolls.length === 0 ? emptyLatestTitle : '이 주제의 질문은 위에서 모두 소개했어요.'}
+              </p>
+              <p className="mt-1.5">궁금한 걸 먼저 물어볼까요?</p>
+              <Link href="/create" className="mt-4 inline-flex min-h-11 items-center rounded-xl border border-blue-500/30 px-4 font-bold text-blue-600 transition hover:border-blue-500 hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:text-blue-300 dark:hover:bg-blue-500/10 dark:focus-visible:ring-offset-slate-950">
+                질문 올리기
+              </Link>
             </div>
           ) : (
             <div className="grid min-w-0 max-w-full items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
