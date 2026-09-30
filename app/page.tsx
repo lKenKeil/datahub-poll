@@ -95,13 +95,14 @@ function isFreshPoll(poll: DbPoll) {
 function getPollOutcomeLabel(poll: DbPoll) {
   const votes = poll.votes ?? [];
   const total = votes.reduce((sum, vote) => sum + vote, 0);
-  if (votes.length < 2 || total < 10) return null;
+  if (poll.options.length !== 2 || votes.length !== 2 || (poll.participants ?? 0) < 10 || total < 10) {
+    return null;
+  }
 
-  const sorted = [...votes].sort((a, b) => b - a);
-  const gap = ((sorted[0] - sorted[1]) / total) * 100;
-  if (gap <= 8) return '거의 반반';
-  if (gap >= 35) return '의견이 크게 갈렸어요';
-  return null;
+  const gap = (Math.abs(votes[0] - votes[1]) / total) * 100;
+  if (gap <= 10) return '거의 반반';
+  if (gap <= 25) return '의견이 갈렸어요';
+  return '한쪽으로 기울었어요';
 }
 
 function getRisingScore(poll: DbPoll) {
@@ -223,7 +224,7 @@ function PollOptionImagePreview({
   const containerClass = variant === 'hero'
     ? 'mt-5 aspect-[16/7] w-full rounded-2xl'
     : variant === 'card'
-      ? 'mt-4 aspect-[2/1] w-full rounded-2xl'
+      ? 'mt-4 h-24 w-full rounded-2xl'
       : 'h-20 w-24 shrink-0 rounded-2xl sm:w-28';
   const imageSizes = variant === 'hero'
     ? imageUrls.length > 1
@@ -277,6 +278,31 @@ function PollChoiceHint({ options }: { options: string[] }) {
       <span className="text-[10px] font-black tracking-wider text-slate-400">VS</span>
       <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">2</span>
       <span className="truncate">{options[1]}</span>
+    </div>
+  );
+}
+
+function PollCommunitySignals({ poll, showCreatedAt = false }: { poll: DbPoll; showCreatedAt?: boolean }) {
+  const outcomeLabel = getPollOutcomeLabel(poll);
+  const participants = poll.participants ?? 0;
+  const signals = [
+    outcomeLabel ? { label: outcomeLabel, emphasized: true } : null,
+    participants > 0 ? { label: `${participants.toLocaleString()}명 참여`, emphasized: false } : null,
+    showCreatedAt ? { label: formatRelativeTime(poll.created_at), emphasized: false } : null,
+  ].filter((signal): signal is { label: string; emphasized: boolean } => signal !== null);
+
+  if (signals.length === 0) return null;
+
+  return (
+    <div aria-label="활동 정보" className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      {signals.map((signal, index) => (
+        <span key={`${signal.label}-${index}`} className="inline-flex min-w-0 items-center gap-2">
+          {index > 0 ? <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span> : null}
+          <span className={signal.emphasized ? 'font-bold text-violet-700 dark:text-violet-300' : 'font-medium text-slate-600 dark:text-slate-400'}>
+            {signal.label}
+          </span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -595,31 +621,25 @@ export default function Home() {
           {loading ? (
             <div className="text-sm font-bold text-slate-500">인기 투표를 불러오는 중...</div>
           ) : (
-            <div className="grid min-w-0 max-w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {popularPolls.map((poll) => {
-                const outcomeLabel = getPollOutcomeLabel(poll);
-                return (
-                  <Link
-                    key={poll.id}
-                    href={`/vote/${poll.id}`}
-                    className="group flex min-h-52 min-w-0 max-w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-950/5 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50"
-                  >
-                    <div className="flex min-h-6 items-center justify-between gap-2">
-                      <span className="text-xs font-black text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</span>
-                      {outcomeLabel ? <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">{outcomeLabel}</span> : null}
-                    </div>
-                    <PollOptionImagePreview poll={poll} variant="card" />
-                    <h3 className="mt-5 min-w-0 break-words text-xl font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
-                    <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.035]">
-                      <PollChoiceHint options={poll.options} />
-                    </div>
-                    <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-5 text-sm dark:border-white/10">
-                      <span className="font-medium text-slate-500">{(poll.participants ?? 0).toLocaleString()}명 참여</span>
-                      <span className="font-bold text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">결과 보기 →</span>
-                    </div>
-                  </Link>
-                );
-              })}
+            <div className="grid min-w-0 max-w-full items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {popularPolls.map((poll) => (
+                <Link
+                  key={poll.id}
+                  href={`/vote/${poll.id}`}
+                  className="group flex min-h-52 min-w-0 max-w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-950/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50 dark:focus-visible:ring-offset-slate-950"
+                >
+                  <h3 className="min-w-0 break-words text-xl font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                  <p className="mt-2 text-xs font-bold text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</p>
+                  <PollOptionImagePreview poll={poll} variant="card" />
+                  <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.035]">
+                    <PollChoiceHint options={poll.options} />
+                  </div>
+                  <PollCommunitySignals poll={poll} />
+                  <div className="mt-auto flex items-center justify-end border-t border-slate-100 pt-5 text-sm dark:border-white/10">
+                    <span className="font-bold text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">결과 보기 →</span>
+                  </div>
+                </Link>
+              ))}
             </div>
           )}
         </section>
@@ -636,7 +656,7 @@ export default function Home() {
           ) : (
             <div className="grid min-w-0 max-w-full gap-4 lg:grid-cols-2">
               {risingPolls.map((poll, index) => (
-                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex w-full min-w-0 max-w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-cyan-500/60 dark:border-white/10 dark:bg-white/[0.04]">
+                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex w-full min-w-0 max-w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:focus-visible:ring-offset-slate-950">
                   <PollOptionImagePreview
                     poll={poll}
                     variant="compact"
@@ -644,13 +664,10 @@ export default function Home() {
                     fallback={<span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-cyan-500/10 text-lg font-black text-cyan-600 dark:text-cyan-300">{index + 1}</span>}
                   />
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
-                      <span className="text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</span>
-                      <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-300">{isFreshPoll(poll) ? '새로 뜨는 중' : '주목받는 투표'}</span>
-                    </div>
-                    <h3 className="mt-1.5 min-w-0 break-words whitespace-normal text-base font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                    <h3 className="min-w-0 break-words whitespace-normal text-base font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                     <div className="mt-2"><PollChoiceHint options={poll.options} /></div>
-                    <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">참여자 {(poll.participants ?? 0).toLocaleString()}명</p>
+                    <PollCommunitySignals poll={poll} />
+                    <p className="mt-2 text-xs font-medium text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</p>
                   </div>
                   <span className="shrink-0 text-blue-500 transition-transform group-hover:translate-x-1">→</span>
                 </Link>
@@ -695,20 +712,17 @@ export default function Home() {
               조건에 맞는 투표가 없어요. <Link href="/create" className="font-black text-blue-500">첫 투표를 만들어보세요.</Link>
             </div>
           ) : (
-            <div className="grid min-w-0 max-w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 max-w-full items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
               {latestPolls.map((poll) => (
-                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-slate-200 bg-white p-5 transition hover:border-blue-400 hover:bg-blue-50/40 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-blue-500/[0.06]">
-                  <div className="flex items-center justify-between gap-3 text-xs font-bold">
-                    <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-blue-600 dark:text-blue-300">{getInterestCategory(poll)}</span>
-                    <span className="text-slate-600 dark:text-slate-400">{formatRelativeTime(poll.created_at)}</span>
-                  </div>
+                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-slate-200 bg-white p-5 transition hover:border-blue-400 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-blue-500/[0.06] dark:focus-visible:ring-offset-slate-950">
+                  <h3 className="min-w-0 break-words text-lg font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                  <p className="mt-2 text-xs font-bold text-blue-600 dark:text-blue-300">{getInterestCategory(poll)}</p>
                   <PollOptionImagePreview poll={poll} variant="card" />
-                  <h3 className="mt-4 min-w-0 break-words text-lg font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                   <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.035]">
                     <PollChoiceHint options={poll.options} />
                   </div>
-                  <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-xs dark:border-white/10">
-                    <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
+                  <PollCommunitySignals poll={poll} showCreatedAt />
+                  <div className="mt-6 flex items-center justify-end border-t border-slate-100 pt-4 text-xs dark:border-white/10">
                     <span className="font-bold text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">투표하러 가기 →</span>
                   </div>
                 </Link>
