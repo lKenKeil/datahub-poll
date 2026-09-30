@@ -418,6 +418,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     }
     return map;
   }, [comments]);
+  const replyCount = comments.length - parentComments.length;
+  const reactionCount = comments.reduce(
+    (total, comment) => total + comment.like_count + comment.dislike_count,
+    0,
+  );
   const optionImageUrls = useMemo(() => {
     if (!pollData) return [];
     return pollData.options.map((_, index) => getPollOptionImagePublicUrl(
@@ -933,67 +938,79 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         </div>
 
         <div className="grid items-start gap-8 pt-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="space-y-6">
+          <section className="min-w-0 max-w-3xl space-y-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
                 <h2 className="text-2xl font-bold text-slate-950 dark:text-white sm:text-3xl">사람들의 의견</h2>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">다른 사람은 왜 그렇게 골랐는지 이야기해보세요.</p>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">결과만큼 궁금한 건, 사람들이 그렇게 고른 이유예요.</p>
+                <div aria-label="의견 활동" className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  <span>의견 {parentComments.length}개</span>
+                  <span aria-hidden="true" className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                  <span>답글 {replyCount}개</span>
+                  <span aria-hidden="true" className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                  <span>반응 {reactionCount}개</span>
+                </div>
               </div>
-              <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-black text-slate-600 dark:bg-white/10 dark:text-slate-300">의견 {comments.length}개</span>
             </div>
 
-            <form onSubmit={handleCommentSubmit} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-5">
-              <label htmlFor="comment-input" className="text-sm font-bold text-slate-700 dark:text-slate-200">내 의견 남기기</label>
+            <form onSubmit={handleCommentSubmit} className="border-y border-slate-200 py-5 dark:border-white/10">
+              <label htmlFor="comment-input" className="text-sm font-bold text-slate-800 dark:text-slate-100">왜 그렇게 골랐는지 알려주세요.</label>
+              <p id="comment-input-help" className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">다른 사람들과 선택한 이유를 나눠보세요.</p>
               <textarea
                 id="comment-input"
+                aria-describedby="comment-input-help"
                 rows={3}
                 value={inputText}
                 onChange={(event) => setInputText(event.target.value)}
-                className="mt-3 w-full resize-none rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
-                placeholder="이 투표에 대한 생각을 남겨주세요."
+                className="mt-3 w-full resize-none rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium leading-relaxed text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                placeholder="선택한 이유를 남겨주세요."
               />
               <div className="mt-3 flex justify-end">
-                <button type="submit" className="min-h-11 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white transition hover:bg-blue-500">의견 등록</button>
+                <button type="submit" className="min-h-11 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950">의견 남기기</button>
               </div>
             </form>
 
             {parentComments.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-white/10">아직 의견이 없어요. 첫 의견을 남겨보세요.</div>
+              <div className="border-y border-dashed border-slate-300 py-10 text-center dark:border-white/10">
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">아직 의견이 없어요.</p>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">첫 번째 이유를 남겨볼까요?</p>
+              </div>
             ) : (
-              <div className="grid gap-4">
+              <div className="divide-y divide-slate-200 border-y border-slate-200 dark:divide-white/10 dark:border-white/10">
                 {parentComments.map((comment) => (
-                  <article key={comment.id} className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.025] sm:p-6">
+                  <article key={comment.id} className="py-6 first:pt-5 last:pb-5 sm:px-1">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-xs font-black text-blue-600 dark:text-blue-300">익명 사용자</span>
-                      <time className="text-xs font-semibold text-slate-400">{new Date(comment.created_at).toLocaleDateString('ko-KR')}</time>
+                      <time className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{new Date(comment.created_at).toLocaleDateString('ko-KR')}</time>
                     </div>
-                    <p className="mt-4 whitespace-pre-wrap break-words font-semibold leading-relaxed text-slate-700 dark:text-slate-300">{comment.text}</p>
+                    <p className="mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-[15px] font-medium leading-7 text-slate-800 dark:text-slate-200">{comment.text}</p>
 
-                    <div className="mt-5 flex flex-wrap items-center gap-2 text-xs">
-                      <button type="button" onClick={() => handleReaction(String(comment.id), 'like')} className={`min-h-10 rounded-xl border px-3 py-1.5 font-bold transition ${comment.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-600 hover:border-emerald-400 dark:border-white/10 dark:text-slate-400'}`}>👍 좋아요 {comment.like_count}</button>
-                      <button type="button" onClick={() => handleReaction(String(comment.id), 'dislike')} className={`min-h-10 rounded-xl border px-3 py-1.5 font-bold transition ${comment.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-600 hover:border-rose-400 dark:border-white/10 dark:text-slate-400'}`}>👎 싫어요 {comment.dislike_count}</button>
-                      <button type="button" onClick={() => setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id))} className="min-h-10 rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-600 transition hover:border-blue-400 hover:text-blue-600 dark:border-white/10 dark:text-slate-400">답글</button>
+                    <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                      <button type="button" aria-pressed={comment.user_reaction === 'like'} onClick={() => handleReaction(String(comment.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${comment.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-600 hover:border-emerald-400 dark:border-white/10 dark:text-slate-400'}`}><span>좋아요</span><span>{comment.like_count}</span>{comment.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
+                      <button type="button" aria-pressed={comment.user_reaction === 'dislike'} onClick={() => handleReaction(String(comment.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${comment.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-600 hover:border-rose-400 dark:border-white/10 dark:text-slate-400'}`}><span>싫어요</span><span>{comment.dislike_count}</span>{comment.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
+                      <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id))} className="min-h-10 rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-600 transition hover:border-blue-400 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:text-slate-400 dark:focus-visible:ring-offset-slate-950">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
                     </div>
 
                     {replyTargetId === String(comment.id) ? (
-                      <div className="mt-4 flex flex-col gap-2 rounded-2xl bg-slate-50 p-3 dark:bg-white/[0.035] sm:flex-row">
-                        <input value={replyText} onChange={(event) => setReplyText(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none focus:border-blue-500 dark:border-white/10 dark:bg-white/5" placeholder="답글을 입력하세요" />
-                        <button type="button" onClick={() => void handleReplySubmit(String(comment.id))} className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-black text-white">등록</button>
+                      <div id={`reply-editor-${comment.id}`} className="mt-4 flex flex-col gap-2 border-l-2 border-blue-500/25 pl-3 sm:flex-row">
+                        <label htmlFor={`reply-input-${comment.id}`} className="sr-only">답글 내용</label>
+                        <input id={`reply-input-${comment.id}`} value={replyText} onChange={(event) => setReplyText(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/5" placeholder="짧게 답글을 남겨보세요." />
+                        <button type="button" onClick={() => void handleReplySubmit(String(comment.id))} className="min-h-11 rounded-xl bg-blue-600 px-4 py-2 text-xs font-black text-white transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950">답글 남기기</button>
                       </div>
                     ) : null}
 
                     {(repliesByParent.get(String(comment.id)) ?? []).length > 0 ? (
-                      <div className="mt-5 space-y-3 border-l-2 border-blue-500/20 pl-3 sm:pl-5">
+                      <div className="mt-5 divide-y divide-slate-200 border-l-2 border-blue-500/20 pl-3 dark:divide-white/10 sm:pl-5">
                         {(repliesByParent.get(String(comment.id)) ?? []).map((reply) => (
-                          <div key={reply.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/[0.025]">
+                          <div key={reply.id} className="py-4 first:pt-1 last:pb-1">
                             <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-black text-indigo-600 dark:text-indigo-300">답글 · 익명 사용자</span>
-                              <time className="text-xs font-semibold text-slate-400">{new Date(reply.created_at).toLocaleDateString('ko-KR')}</time>
+                              <span className="text-xs font-bold text-blue-600 dark:text-blue-300">답글 · 익명 사용자</span>
+                              <time className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{new Date(reply.created_at).toLocaleDateString('ko-KR')}</time>
                             </div>
-                            <p className="mt-3 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-slate-700 dark:text-slate-300">{reply.text}</p>
-                            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                              <button type="button" onClick={() => handleReaction(String(reply.id), 'like')} className={`rounded-full border px-3 py-1 font-bold ${reply.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-500 dark:border-white/10 dark:text-slate-400'}`}>👍 {reply.like_count}</button>
-                              <button type="button" onClick={() => handleReaction(String(reply.id), 'dislike')} className={`rounded-full border px-3 py-1 font-bold ${reply.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-500 dark:border-white/10 dark:text-slate-400'}`}>👎 {reply.dislike_count}</button>
+                            <p className="mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm font-medium leading-6 text-slate-700 dark:text-slate-300">{reply.text}</p>
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                              <button type="button" aria-pressed={reply.user_reaction === 'like'} onClick={() => handleReaction(String(reply.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${reply.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-500 hover:border-emerald-400 dark:border-white/10 dark:text-slate-400'}`}><span>좋아요</span><span>{reply.like_count}</span>{reply.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
+                              <button type="button" aria-pressed={reply.user_reaction === 'dislike'} onClick={() => handleReaction(String(reply.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${reply.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-500 hover:border-rose-400 dark:border-white/10 dark:text-slate-400'}`}><span>싫어요</span><span>{reply.dislike_count}</span>{reply.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
                             </div>
                           </div>
                         ))}
