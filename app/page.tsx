@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { BrandWordmark } from '@/components/brand-wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { BRAND } from '@/lib/brand';
 import { POLLS } from '../data/polls';
 import { DbPoll, OfficialStatistic } from '../lib/types';
 import { supabase } from '../lib/supabase';
@@ -482,9 +484,8 @@ export default function Home() {
     <div className="min-h-screen w-full min-w-0 max-w-full bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 selection:bg-blue-500/30">
       <nav className="sticky top-0 z-50 w-full min-w-0 max-w-full border-b border-slate-200 bg-white/80 backdrop-blur-xl dark:border-white/5 dark:bg-[#020617]/80">
         <div className="mx-auto flex w-full min-w-0 max-w-[1440px] items-center gap-2 px-4 py-2.5 sm:gap-3 sm:px-6 lg:px-8">
-          <Link href="/" className="flex min-h-11 shrink-0 items-center gap-1.5 text-xl font-black tracking-tighter text-slate-900 dark:text-white sm:text-2xl">
-            <span className="rounded bg-blue-600 px-1.5 py-0.5 text-white sm:px-2">DATA</span>
-            <span>HUB.</span>
+          <Link href="/" aria-label={`${BRAND.name} 홈`} className="flex min-h-11 shrink-0 items-center">
+            <BrandWordmark />
           </Link>
           <label className="relative ml-auto hidden min-w-0 w-full max-w-xl md:block">
             <span className="sr-only">투표 검색</span>
@@ -494,12 +495,12 @@ export default function Home() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               className="min-h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-slate-100/80 py-2.5 pl-10 pr-4 text-sm font-medium outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/5"
-              placeholder="재미있는 투표를 찾아보세요"
+              placeholder="궁금한 질문을 찾아보세요"
             />
           </label>
           <Link href="/create" className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 px-3 text-sm font-bold text-white transition-colors hover:bg-blue-600 hover:text-white dark:bg-white dark:text-black md:ml-0 sm:px-4">
-            <span className="sm:hidden">+ 만들기</span>
-            <span className="hidden sm:inline">+ 투표 만들기</span>
+            <span className="sm:hidden">+ 질문</span>
+            <span className="hidden sm:inline">+ 질문 올리기</span>
           </Link>
           <ThemeToggle />
         </div>
@@ -512,7 +513,7 @@ export default function Home() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               className="min-h-11 w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-slate-100 py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-white/10 dark:bg-white/5"
-              placeholder="투표 검색"
+              placeholder="질문 검색"
             />
           </label>
         </div>
@@ -534,14 +535,14 @@ export default function Home() {
                   {featuredBattle.title}
                 </h1>
                 <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-300 sm:text-base">
-                  사람들은 뭘 골랐을까? 선택하면 결과가 보여요.
+                  {BRAND.tagline}
                 </p>
                 <div className="mt-6 flex flex-wrap items-center gap-3">
                   <Link href={`/vote/${featuredBattle.id}`} className="inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500">
                     결과가 궁금하다면 골라보기 →
                   </Link>
                   <Link href="/create" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white/70 px-5 text-sm font-bold transition hover:border-blue-500 dark:border-white/15 dark:bg-white/5">
-                    내 투표 만들기
+                    직접 물어보기
                   </Link>
                 </div>
                 <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">
@@ -577,7 +578,7 @@ export default function Home() {
           ) : (
             <div className="relative py-8 lg:col-span-2 lg:text-center">
               <p className="text-xl font-bold text-slate-900 dark:text-white">지금 참여할 수 있는 질문을 기다리고 있어요.</p>
-              <Link href="/create" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white">첫 투표 만들기 →</Link>
+              <Link href="/create" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white">첫 질문 올리기 →</Link>
             </div>
           )}
         </section>
@@ -589,7 +590,7 @@ export default function Home() {
               <h2 className="text-2xl font-bold tracking-tight md:text-3xl">실시간 인기</h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">참여자 수와 접전 여부, 최신성을 함께 반영했어요.</p>
             </div>
-            <Link href="/create" className="inline-flex min-h-11 items-center text-sm font-bold text-blue-600 hover:text-blue-500 dark:text-blue-300">+ 새 투표 만들기</Link>
+            <Link href="/create" className="inline-flex min-h-11 items-center text-sm font-bold text-blue-600 hover:text-blue-500 dark:text-blue-300">+ 질문 올리기</Link>
           </div>
           {loading ? (
             <div className="text-sm font-bold text-slate-500">인기 투표를 불러오는 중...</div>

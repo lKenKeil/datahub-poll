@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { BRAND } from "@/lib/brand";
 import { getSiteUrl } from "@/lib/site-url";
 
 const geistSans = Geist({
@@ -16,19 +17,19 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: getSiteUrl(),
-  title: "DATA HUB - 사람들의 선택을 확인하는 투표 커뮤니티",
-  description: "다양한 주제에 투표하고 다른 사람들의 선택과 결과를 확인해보세요.",
+  title: BRAND.siteTitle,
+  description: BRAND.description,
   openGraph: {
-    title: "DATA HUB - 사람들의 선택을 확인하는 투표 커뮤니티",
-    description: "다양한 주제에 투표하고 다른 사람들의 선택과 결과를 확인해보세요.",
-    siteName: "DATA HUB",
+    title: BRAND.openGraphTitle,
+    description: BRAND.openGraphDescription,
+    siteName: BRAND.name,
     locale: "ko_KR",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "DATA HUB - 사람들의 선택을 확인하는 투표 커뮤니티",
-    description: "다양한 주제에 투표하고 다른 사람들의 선택과 결과를 확인해보세요.",
+    title: BRAND.openGraphTitle,
+    description: BRAND.openGraphDescription,
   },
 };
 

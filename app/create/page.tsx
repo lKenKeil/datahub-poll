@@ -450,7 +450,7 @@ export default function CreatePollPage() {
           <div className="max-w-3xl">
             <h1 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-slate-950 dark:text-white sm:text-3xl">투표 만들기</h1>
             <p className="mt-1.5 break-keep text-sm font-medium text-slate-600 dark:text-slate-300 sm:text-base">
-              질문과 선택지만 입력하면 바로 만들 수 있어요.
+              궁금한 걸 사람들에게 물어보세요.
             </p>
           </div>
         </header>

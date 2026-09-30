@@ -803,6 +803,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               </div>
             ) : (
               <div aria-live="polite">
+                <p className="mb-3 text-sm font-bold text-slate-600 dark:text-slate-300">사람들은 이렇게 골랐어요.</p>
                 <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5 sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-6">
                   <div className="min-w-0">
                     <span className="inline-flex rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">내 선택</span>
@@ -873,10 +874,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
                 {nextPoll ? (
                   <div className="mt-8 border-t border-slate-200 pt-6 dark:border-white/10">
-                    <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">다음 질문</p>
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">하나 더 볼까요?</p>
                     <Link href={`/vote/${nextPoll.id}`} className="group mt-3 flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10 sm:p-5">
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-500">이것도 골라볼래요?</p>
+                        <p className="text-xs font-bold text-slate-500">다른 사람들은 이것도 궁금해했어요.</p>
                         <h3 className="mt-1 min-w-0 break-words text-base font-bold text-slate-950 dark:text-white sm:text-lg">{nextPoll.title}</h3>
                         {nextPoll.options.length >= 2 ? (
                           <p className="mt-2 truncate text-xs font-medium text-slate-600 dark:text-slate-400">{nextPoll.options[0]} <span className="mx-1 font-black text-blue-500">VS</span> {nextPoll.options[1]}</p>

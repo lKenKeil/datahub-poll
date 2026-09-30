@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { POLLS } from '@/data/polls';
+import { BRAND } from '@/lib/brand';
 import { supabaseServer } from '@/lib/supabase-server';
 
 type VoteLayoutProps = {
@@ -11,9 +12,6 @@ type VoteLayoutProps = {
 type PollMetadata = {
   title: string;
 };
-
-const SITE_NAME = 'DATA HUB';
-const DEFAULT_DESCRIPTION = '다양한 주제에 투표하고 다른 사람들의 선택과 결과를 확인해보세요.';
 
 function compactText(value: string) {
   return value.replace(/\s+/g, ' ').trim();
@@ -53,32 +51,32 @@ export async function generateMetadata({ params }: VoteLayoutProps): Promise<Met
   const poll = await getPollMetadata(id);
 
   if (!poll) {
-    const title = `투표를 찾을 수 없어요 | ${SITE_NAME}`;
+    const title = `투표를 찾을 수 없어요 | ${BRAND.name}`;
     return {
       title,
-      description: DEFAULT_DESCRIPTION,
+      description: BRAND.description,
       alternates: { canonical: canonicalPath },
       robots: { index: false, follow: false },
       openGraph: {
         title,
-        description: DEFAULT_DESCRIPTION,
+        description: BRAND.openGraphDescription,
         url: canonicalPath,
-        siteName: SITE_NAME,
+        siteName: BRAND.name,
         locale: 'ko_KR',
         type: 'website',
       },
       twitter: {
         card: 'summary',
         title,
-        description: DEFAULT_DESCRIPTION,
+        description: BRAND.openGraphDescription,
       },
     };
   }
 
   const displayTitle = truncateText(poll.title, 68);
-  const title = `${displayTitle} | ${SITE_NAME}`;
+  const title = `${displayTitle} | ${BRAND.name}`;
   const description = truncateText(
-    `'${displayTitle}' 투표에 참여하고 다른 사람들의 선택과 결과를 확인해보세요.`,
+    `'${displayTitle}'에 답하고 다른 사람들의 선택과 의견을 확인해보세요.`,
     155,
   );
 
@@ -91,7 +89,7 @@ export async function generateMetadata({ params }: VoteLayoutProps): Promise<Met
       title,
       description,
       url: canonicalPath,
-      siteName: SITE_NAME,
+      siteName: BRAND.name,
       locale: 'ko_KR',
       type: 'website',
     },
