@@ -90,8 +90,16 @@ function isFreshPoll(poll: DbPoll) {
   return ageHours <= 72;
 }
 
-function isHotPoll(poll: DbPoll) {
-  return (poll.participants ?? 0) >= 20 || isTightRace(poll.votes) || (isFreshPoll(poll) && (poll.participants ?? 0) >= 5);
+function getPollOutcomeLabel(poll: DbPoll) {
+  const votes = poll.votes ?? [];
+  const total = votes.reduce((sum, vote) => sum + vote, 0);
+  if (votes.length < 2 || total < 10) return null;
+
+  const sorted = [...votes].sort((a, b) => b - a);
+  const gap = ((sorted[0] - sorted[1]) / total) * 100;
+  if (gap <= 8) return '거의 반반';
+  if (gap >= 35) return '의견이 크게 갈렸어요';
+  return null;
 }
 
 function getRisingScore(poll: DbPoll) {
@@ -253,6 +261,20 @@ function PollOptionImagePreview({
           {badge}
         </span>
       ) : null}
+    </div>
+  );
+}
+
+function PollChoiceHint({ options }: { options: string[] }) {
+  if (options.length < 2) return null;
+
+  return (
+    <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto_auto_minmax(0,1fr)] items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-500/10 text-blue-700 dark:text-blue-300">1</span>
+      <span className="truncate">{options[0]}</span>
+      <span className="text-[10px] font-black tracking-wider text-slate-400">VS</span>
+      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">2</span>
+      <span className="truncate">{options[1]}</span>
     </div>
   );
 }
@@ -497,73 +519,74 @@ export default function Home() {
       </nav>
 
       <main className="mx-auto w-full min-w-0 max-w-[1440px] space-y-12 px-4 py-6 sm:px-6 md:space-y-16 md:py-10 lg:px-8">
-        <section className="relative min-w-0 max-w-full overflow-hidden rounded-3xl border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-5 shadow-[0_24px_80px_-48px_rgba(37,99,235,0.65)] dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] md:p-8 lg:grid lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)] lg:items-center lg:gap-8">
+        <section className="relative min-w-0 max-w-full overflow-hidden rounded-3xl border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-5 shadow-[0_24px_80px_-48px_rgba(37,99,235,0.65)] dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] md:p-8 lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)] lg:items-center lg:gap-10">
           <div aria-hidden="true" className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
-          <div className="relative min-w-0 space-y-4">
-            <div className="space-y-3">
-              <p className="inline-flex rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-600 dark:text-blue-300">실시간 투표</p>
-              <h1 className="break-words whitespace-normal text-3xl font-black leading-[1.08] tracking-[-0.04em] text-slate-950 dark:text-white sm:text-4xl md:text-5xl">
-                사람들은 지금
-                <br className="hidden sm:block" /> 뭘 고르고 있을까?
-              </h1>
-              <p className="max-w-xl text-sm leading-relaxed text-slate-600 dark:text-slate-300 sm:text-base md:text-lg">
-                하나를 고르고, 다른 사람들의 선택을 바로 확인해보세요.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/create" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white/70 px-5 text-sm font-bold transition hover:border-blue-500 dark:border-white/15 dark:bg-white/5">
-                내 투표 만들기
-              </Link>
-            </div>
-          </div>
+          {featuredBattle ? (
+            <>
+              <div className="relative min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-black text-blue-700 dark:text-blue-300">
+                    {featuredBattle.participants > 0 ? '오늘의 질문' : '첫 선택을 기다려요'}
+                  </span>
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">{featuredBattle.category}</span>
+                </div>
+                <h1 className="mt-4 min-w-0 break-words text-3xl font-black leading-[1.1] tracking-[-0.04em] text-slate-950 dark:text-white sm:text-4xl md:text-5xl">
+                  {featuredBattle.title}
+                </h1>
+                <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-300 sm:text-base">
+                  사람들은 뭘 골랐을까? 선택하면 결과가 보여요.
+                </p>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <Link href={`/vote/${featuredBattle.id}`} className="inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500">
+                    결과가 궁금하다면 골라보기 →
+                  </Link>
+                  <Link href="/create" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white/70 px-5 text-sm font-bold transition hover:border-blue-500 dark:border-white/15 dark:bg-white/5">
+                    내 투표 만들기
+                  </Link>
+                </div>
+                <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  현재 {featuredBattle.participants.toLocaleString()}명이 선택했어요.
+                </p>
+              </div>
 
-          <div className="relative mt-5 min-w-0 max-w-full rounded-2xl border border-white/70 bg-white/90 p-4 shadow-xl shadow-blue-950/10 backdrop-blur dark:border-white/10 dark:bg-slate-950/65 md:p-6 lg:mt-0">
-              {featuredBattle ? (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-orange-500/15 px-2.5 py-1 text-xs font-bold text-orange-600 dark:text-orange-300">
-                        {featuredBattle.official
-                          ? '오늘의 투표'
-                          : featuredBattle.participants > 0
-                            ? 'HOT'
-                            : '오늘의 질문'}
-                      </span>
-                      <span className="text-xs font-bold text-blue-600 dark:text-cyan-300">{featuredBattle.category}</span>
-                    </div>
-                    <span className="text-xs font-bold text-slate-500">참여자 {featuredBattle.participants.toLocaleString()}명</span>
+              <div className="relative mt-6 min-w-0 max-w-full rounded-2xl border border-white/70 bg-white/90 p-4 shadow-xl shadow-blue-950/10 backdrop-blur dark:border-white/10 dark:bg-slate-950/65 md:p-6 lg:mt-0">
+                <PollOptionImagePreview poll={featuredBattle} variant="hero" eager />
+                {featuredBattle.options.length === 2 ? (
+                  <div className="relative mt-4 grid gap-3 sm:grid-cols-2">
+                    {featuredBattle.options.map((option, index) => (
+                      <div key={`${featuredBattle.id}_${index}`} className="flex min-h-24 min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-white/5">
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${index === 0 ? 'bg-blue-600 text-white' : 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300'}`}>{index + 1}</span>
+                        <span className="min-w-0 break-words text-base font-bold text-slate-900 dark:text-white">{option}</span>
+                      </div>
+                    ))}
+                    <span className="absolute left-1/2 top-1/2 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-black tracking-wider text-slate-500 shadow-sm dark:border-white/15 dark:bg-slate-900 dark:text-slate-300">VS</span>
                   </div>
-                  <h2 className="mt-4 min-w-0 break-words whitespace-normal text-2xl font-black leading-snug text-slate-950 dark:text-white md:text-3xl">{featuredBattle.title}</h2>
-                  <PollOptionImagePreview poll={featuredBattle} variant="hero" eager />
-                  <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                ) : (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
                     {featuredBattle.options.slice(0, 4).map((option, index) => (
-                      <div key={`${featuredBattle.id}_${index}`} className="min-w-0 break-words rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold dark:border-white/10 dark:bg-white/5">
-                        <span className="mr-2 text-blue-500">{index + 1}</span>
-                        {option}
+                      <div key={`${featuredBattle.id}_${index}`} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold dark:border-white/10 dark:bg-white/5">
+                        <span className="text-blue-600 dark:text-blue-300">{index + 1}</span>
+                        <span className="min-w-0 break-words">{option}</span>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 dark:border-white/10">
-                    <span className="text-xs font-medium text-slate-600 dark:text-slate-400">결과는 투표 후 확인할 수 있어요</span>
-                    <Link href={`/vote/${featuredBattle.id}`} className="inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500">
-                      투표하러 가기 →
-                    </Link>
-                  </div>
-                </>
-              ) : (
-                <div className="py-10 text-center">
-                  <p className="text-sm text-slate-500">지금 참여할 수 있는 투표가 없어요.</p>
-                  <Link href="/create" className="mt-3 inline-flex text-sm font-black text-blue-500">첫 투표 만들기 →</Link>
-                </div>
-              )}
-          </div>
+                )}
+                <p className="mt-4 text-center text-xs font-medium text-slate-500 dark:text-slate-400">결과는 선택하기 전까지 보이지 않아요.</p>
+              </div>
+            </>
+          ) : (
+            <div className="relative py-8 lg:col-span-2 lg:text-center">
+              <p className="text-xl font-bold text-slate-900 dark:text-white">지금 참여할 수 있는 질문을 기다리고 있어요.</p>
+              <Link href="/create" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white">첫 투표 만들기 →</Link>
+            </div>
+          )}
         </section>
 
         {loading || popularPolls.length > 0 ? (
         <section id="popular-polls" className="scroll-mt-32 space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-bold tracking-tight md:text-3xl">🔥 실시간 인기</h2>
+              <h2 className="text-2xl font-bold tracking-tight md:text-3xl">실시간 인기</h2>
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">참여자 수와 접전 여부, 최신성을 함께 반영했어요.</p>
             </div>
             <Link href="/create" className="inline-flex min-h-11 items-center text-sm font-bold text-blue-600 hover:text-blue-500 dark:text-blue-300">+ 새 투표 만들기</Link>
@@ -572,26 +595,30 @@ export default function Home() {
             <div className="text-sm font-bold text-slate-500">인기 투표를 불러오는 중...</div>
           ) : (
             <div className="grid min-w-0 max-w-full gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {popularPolls.map((poll) => (
-                <Link
-                  key={poll.id}
-                  href={`/vote/${poll.id}`}
-                  className="group flex min-h-52 min-w-0 max-w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-950/5 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-black text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</span>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${isTightRace(poll.votes) ? 'bg-violet-500/15 text-violet-600 dark:text-violet-300' : isHotPoll(poll) ? 'bg-orange-500/15 text-orange-600 dark:text-orange-300' : 'bg-blue-500/10 text-blue-600 dark:text-blue-300'}`}>
-                      {isTightRace(poll.votes) ? '접전 중' : isHotPoll(poll) ? 'HOT' : '인기'}
-                    </span>
-                  </div>
-                  <PollOptionImagePreview poll={poll} variant="card" />
-                  <h3 className="mt-5 min-w-0 break-words text-xl font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
-                  <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-5 text-sm dark:border-white/10">
-                    <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
-                    <span className="font-bold text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">투표하러 가기 →</span>
-                  </div>
-                </Link>
-              ))}
+              {popularPolls.map((poll) => {
+                const outcomeLabel = getPollOutcomeLabel(poll);
+                return (
+                  <Link
+                    key={poll.id}
+                    href={`/vote/${poll.id}`}
+                    className="group flex min-h-52 min-w-0 max-w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-950/5 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50"
+                  >
+                    <div className="flex min-h-6 items-center justify-between gap-2">
+                      <span className="text-xs font-black text-blue-600 dark:text-cyan-300">{getInterestCategory(poll)}</span>
+                      {outcomeLabel ? <span className="rounded-full bg-violet-500/10 px-2.5 py-1 text-xs font-bold text-violet-700 dark:text-violet-300">{outcomeLabel}</span> : null}
+                    </div>
+                    <PollOptionImagePreview poll={poll} variant="card" />
+                    <h3 className="mt-5 min-w-0 break-words text-xl font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                    <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.035]">
+                      <PollChoiceHint options={poll.options} />
+                    </div>
+                    <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-5 text-sm dark:border-white/10">
+                      <span className="font-medium text-slate-500">{(poll.participants ?? 0).toLocaleString()}명 참여</span>
+                      <span className="font-bold text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">결과 보기 →</span>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </section>
@@ -600,7 +627,7 @@ export default function Home() {
         {loading || risingPolls.length > 0 ? (
         <section className="space-y-5">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">📈 지금 뜨는 투표</h2>
+            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">지금 뜨는 투표</h2>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">최근 등록된 투표의 참여도와 접전 여부를 기준으로 정렬했어요.</p>
           </div>
           {loading ? (
@@ -621,6 +648,7 @@ export default function Home() {
                       <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-emerald-600 dark:text-emerald-300">{isFreshPoll(poll) ? '새로 뜨는 중' : '주목받는 투표'}</span>
                     </div>
                     <h3 className="mt-1.5 min-w-0 break-words whitespace-normal text-base font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                    <div className="mt-2"><PollChoiceHint options={poll.options} /></div>
                     <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">참여자 {(poll.participants ?? 0).toLocaleString()}명</p>
                   </div>
                   <span className="shrink-0 text-blue-500 transition-transform group-hover:translate-x-1">→</span>
@@ -656,7 +684,7 @@ export default function Home() {
 
         <section id="latest-polls" className="space-y-5">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">🆕 새로 올라온 투표</h2>
+            <h2 className="text-2xl font-bold tracking-tight md:text-3xl">새로 올라온 투표</h2>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">방금 만들어진 투표부터 확인해보세요.</p>
           </div>
           {loading ? (
@@ -675,6 +703,9 @@ export default function Home() {
                   </div>
                   <PollOptionImagePreview poll={poll} variant="card" />
                   <h3 className="mt-4 min-w-0 break-words text-lg font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
+                  <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.035]">
+                    <PollChoiceHint options={poll.options} />
+                  </div>
                   <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-xs dark:border-white/10">
                     <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
                     <span className="font-bold text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">투표하러 가기 →</span>

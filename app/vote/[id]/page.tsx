@@ -136,6 +136,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [choice, setChoice] = useState<string | null>(null);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
   const [barWidths, setBarWidths] = useState<number[]>([]);
+  const [resultRevealAnimating, setResultRevealAnimating] = useState(false);
   const [comments, setComments] = useState<CommentView[]>([]);
   const [inputText, setInputText] = useState('');
   const [replyText, setReplyText] = useState('');
@@ -154,6 +155,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const lastSnapshotRef = useRef('');
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shareFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resultRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setUserFingerprint(getOrCreateFingerprint());
@@ -176,6 +178,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   useEffect(() => {
     return () => {
       if (shareFeedbackTimerRef.current) clearTimeout(shareFeedbackTimerRef.current);
+      if (resultRevealTimerRef.current) clearTimeout(resultRevealTimerRef.current);
     };
   }, []);
 
@@ -446,6 +449,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       return bTime - aTime;
     })
     .slice(0, 4);
+  const nextPoll = relatedPolls[0] ?? null;
+  const remainingRelatedPolls = voted ? relatedPolls.slice(1) : relatedPolls;
 
   const showShareFeedback = (feedback: ShareFeedback) => {
     if (shareFeedbackTimerRef.current) clearTimeout(shareFeedbackTimerRef.current);
@@ -501,7 +506,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     setSelectedOptionIndex(idx);
     setVoted(true);
     setPollData({ ...pollData, votes: optimisticVotes, participants: pollData.participants + 1 });
+    setResultRevealAnimating(true);
+    if (resultRevealTimerRef.current) clearTimeout(resultRevealTimerRef.current);
+    setBarWidths(pollData.options.map(() => 0));
     setTimeout(() => setBarWidths(calcPercentages(optimisticVotes)), 100);
+    resultRevealTimerRef.current = setTimeout(() => {
+      setResultRevealAnimating(false);
+      resultRevealTimerRef.current = null;
+    }, 550);
 
     try {
       const response = await fetch(`/api/polls/${pollData.id}/vote`, {
@@ -740,14 +752,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <h2 className="text-2xl font-bold text-slate-950 dark:text-white">{isRevoting ? '선택을 바꿔볼까요?' : '어느 쪽을 고르세요'}</h2>
+                    <h2 className="text-2xl font-bold text-slate-950 dark:text-white">{isRevoting ? '선택을 바꿔볼까요?' : '당신의 선택은?'}</h2>
                     <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{isRevoting ? '같은 선택지를 누르면 변경 없이 결과로 돌아가요.' : '선택하면 전체 결과를 확인할 수 있어요.'}</p>
                   </div>
                   {isRevoting ? (
                     <button type="button" onClick={() => setIsRevoting(false)} className="text-sm font-black text-slate-500 hover:text-blue-600">취소</button>
                   ) : null}
                 </div>
-                <div className="mt-7 grid gap-3 sm:grid-cols-2">
+                <div className="relative mt-7 grid gap-3 sm:grid-cols-2">
                   {pollData.options.map((option, index) => {
                     const isCurrent = isRevoting && selectedOptionIndex === index;
                     const imageUrl = optionImageUrls[index];
@@ -756,7 +768,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                         key={`${option}_${index}`}
                         type="button"
                         onClick={() => (isRevoting ? handleRevote(index) : handleVote(index))}
-                        className={`group w-full min-w-0 overflow-hidden rounded-2xl border text-left transition duration-200 active:scale-[0.99] ${imageUrl ? 'flex flex-col p-3' : 'flex min-h-28 items-center justify-between gap-4 p-5'} ${isCurrent ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/15 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:-translate-y-0.5 hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10'}`}
+                        className={`group w-full min-w-0 overflow-hidden rounded-2xl border text-left transition duration-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:scale-[0.99] dark:focus-visible:ring-offset-slate-950 ${imageUrl ? 'flex flex-col p-3' : 'flex min-h-28 items-center justify-between gap-4 p-5'} ${isCurrent ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/15 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:-translate-y-0.5 hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10'}`}
                       >
                         {imageUrl ? (
                           <span className="relative block aspect-[4/3] max-h-72 w-full overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-900">
@@ -782,21 +794,24 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                       </button>
                     );
                   })}
+                  {pollData.options.length === 2 ? (
+                    <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-black tracking-wider text-slate-500 shadow-sm dark:border-white/15 dark:bg-slate-900 dark:text-slate-300">VS</span>
+                  ) : null}
                 </div>
-                <p className="mt-5 text-center text-xs font-medium text-slate-600 dark:text-slate-400">선택하면 결과를 확인할 수 있어요. 투표 후에도 선택을 바꿀 수 있어요.
+                <p className="mt-5 text-center text-xs font-medium text-slate-600 dark:text-slate-400">하나를 고르면 바로 다른 사람들의 선택이 보여요. 투표 후에도 선택을 바꿀 수 있어요.
                 </p>
               </div>
             ) : (
               <div aria-live="polite">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <span className="inline-flex rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-black text-emerald-700 dark:text-emerald-300">참여 완료</span>
-                    <h2 className="mt-3 text-2xl font-black text-slate-950 dark:text-white sm:text-3xl">투표 결과</h2>
-                    <p className="mt-2 text-sm text-slate-500">총 {pollData.participants.toLocaleString()}명이 참여했어요.</p>
+                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5 sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-6">
+                  <div className="min-w-0">
+                    <span className="inline-flex rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">내 선택</span>
+                    <h2 className="mt-3 min-w-0 break-words text-xl font-black text-slate-950 dark:text-white sm:text-2xl">{choice} ✓</h2>
+                    <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">총 {pollData.participants.toLocaleString()}명이 참여했어요.</p>
                   </div>
-                  <div className="rounded-2xl bg-blue-600 px-4 py-3 text-right text-white shadow-lg shadow-blue-600/20">
-                    <p className="text-xs font-bold text-blue-100">내 선택</p>
-                    <p className="mt-0.5 max-w-64 break-words text-sm font-black sm:text-base">{choice} ✓</p>
+                  <div className="mt-5 shrink-0 border-t border-blue-500/15 pt-4 sm:mt-0 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-right">
+                    <p className="text-5xl font-black tracking-[-0.05em] text-blue-600 dark:text-blue-300">{selectedPercentage}%</p>
+                    <p className="mt-1 text-sm font-bold text-blue-800 dark:text-blue-200">가 같은 선택을 했어요</p>
                   </div>
                 </div>
 
@@ -833,17 +848,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                               <span className={`text-2xl font-black ${isSelected ? 'text-blue-600 dark:text-blue-300' : 'text-slate-900 dark:text-white'}`}>{percentage}%</span>
                             </div>
                             <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
-                              <div className={`h-full rounded-full transition-all duration-700 ease-out ${isSelected ? 'bg-gradient-to-r from-blue-600 to-cyan-400' : 'bg-slate-400 dark:bg-slate-500'}`} style={{ width: `${percentage}%` }} />
+                              <div className={`h-full rounded-full ${resultRevealAnimating ? 'transition-[width] duration-500 ease-out motion-reduce:transition-none' : ''} ${isSelected ? 'bg-gradient-to-r from-blue-600 to-cyan-400' : 'bg-slate-400 dark:bg-slate-500'}`} style={{ width: `${percentage}%` }} />
                             </div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
-                </div>
-
-                <div className="mt-7 rounded-2xl border border-blue-500/20 bg-blue-500/10 px-5 py-4 text-center">
-                  <p className="font-black text-blue-700 dark:text-blue-200"><span className="text-2xl">{selectedPercentage}%</span>가 나와 같은 선택을 했어요.</p>
                 </div>
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
@@ -859,23 +870,31 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     {isSharing ? '공유 준비 중...' : '공유하기'}
                   </button>
                 </div>
+
+                {nextPoll ? (
+                  <div className="mt-8 border-t border-slate-200 pt-6 dark:border-white/10">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">다음 질문</p>
+                    <Link href={`/vote/${nextPoll.id}`} className="group mt-3 flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10 sm:p-5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-500">이것도 골라볼래요?</p>
+                        <h3 className="mt-1 min-w-0 break-words text-base font-bold text-slate-950 dark:text-white sm:text-lg">{nextPoll.title}</h3>
+                        {nextPoll.options.length >= 2 ? (
+                          <p className="mt-2 truncate text-xs font-medium text-slate-600 dark:text-slate-400">{nextPoll.options[0]} <span className="mx-1 font-black text-blue-500">VS</span> {nextPoll.options[1]}</p>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0 text-sm font-black text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">골라보기 →</span>
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             )}
           </section>
 
           <aside className="space-y-4">
+            {!voted || (canManagePoll && !isOfficial) ? (
             <section className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035]">
-              <h2 className="text-base font-bold text-slate-950 dark:text-white">한눈에 보기</h2>
-              <dl className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-1">
-                <div className="rounded-2xl bg-slate-100 p-4 dark:bg-white/5">
-                  <dt className="text-xs font-bold text-slate-500">참여자</dt>
-                  <dd className="mt-1 text-xl font-black">{pollData.participants.toLocaleString()}명</dd>
-                </div>
-                <div className="rounded-2xl bg-slate-100 p-4 dark:bg-white/5">
-                  <dt className="text-xs font-bold text-slate-500">현재 상태</dt>
-                  <dd className="mt-1 text-base font-black text-blue-600 dark:text-blue-300">{voted ? '참여 완료' : '투표 진행 중'}</dd>
-                </div>
-              </dl>
+              <h2 className="text-base font-bold text-slate-950 dark:text-white">{voted ? '내 투표 관리' : '친구의 선택도 궁금한가요?'}</h2>
+              {!voted ? <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">질문을 공유하고 서로의 결과를 비교해보세요.</p> : null}
               {!voted ? (
                 <button
                   type="button"
@@ -897,6 +916,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 </Link>
               ) : null}
             </section>
+            ) : null}
 
             {pollData.officialFact ? (
               <section className="rounded-3xl border border-cyan-500/20 bg-cyan-50/70 p-5 dark:bg-cyan-950/20">
@@ -915,7 +935,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           <section className="space-y-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-bold text-slate-950 dark:text-white sm:text-3xl">💬 사람들의 의견</h2>
+                <h2 className="text-2xl font-bold text-slate-950 dark:text-white sm:text-3xl">사람들의 의견</h2>
                 <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">다른 사람은 왜 그렇게 골랐는지 이야기해보세요.</p>
               </div>
               <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-black text-slate-600 dark:bg-white/10 dark:text-slate-300">의견 {comments.length}개</span>
@@ -989,13 +1009,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               <h2 className="text-xl font-bold text-slate-950 dark:text-white">이 투표도 해보세요</h2>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">같은 관심사와 인기 투표를 모았어요.</p>
             </div>
-            {relatedPolls.length === 0 ? (
+            {remainingRelatedPolls.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 p-6 text-sm text-slate-500 dark:border-white/10">
-                다른 투표를 불러오고 있어요. <Link href="/" className="font-black text-blue-600 dark:text-blue-300">홈에서 둘러보기</Link>
+                다른 질문은 <Link href="/" className="font-black text-blue-600 dark:text-blue-300">홈에서 둘러보세요.</Link>
               </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                {relatedPolls.map((poll) => (
+                {remainingRelatedPolls.map((poll) => (
                   <Link key={poll.id} href={`/vote/${poll.id}`} className="group rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-blue-500 hover:shadow-lg hover:shadow-blue-950/5 dark:border-white/10 dark:bg-white/[0.035]">
                     <div className="flex items-center justify-between gap-2 text-xs font-bold">
                       <span className="text-blue-600 dark:text-blue-300">{poll.category || '커뮤니티'}</span>
