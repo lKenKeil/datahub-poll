@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { BrandWordmark } from '@/components/brand-wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { BRAND } from '@/lib/brand';
+import { trackPollCardClicked } from '@/lib/analytics';
 import { POLLS } from '../data/polls';
 import { DbPoll, OfficialStatistic } from '../lib/types';
 import { supabase } from '../lib/supabase';
@@ -235,6 +236,7 @@ type FeaturedBattle = {
   id: string;
   title: string;
   category: string;
+  analyticsCategory: string;
   options: string[];
   participants: number;
   official: boolean;
@@ -538,6 +540,7 @@ export default function Home() {
         id: featuredCommunityPoll.id,
         title: featuredCommunityPoll.title,
         category: getInterestCategory(featuredCommunityPoll),
+        analyticsCategory: featuredCommunityPoll.category || '커뮤니티',
         options: featuredCommunityPoll.options,
         participants: featuredCommunityPoll.participants || 0,
         official: false,
@@ -550,6 +553,7 @@ export default function Home() {
         id: top.id,
         title: top.title,
         category: getInterestCategory(top),
+        analyticsCategory: top.category,
         options: top.options,
         participants: top.participants,
         official: true,
@@ -630,7 +634,16 @@ export default function Home() {
                   {BRAND.tagline}
                 </p>
                 <div className="mt-6 flex flex-wrap items-center gap-3">
-                  <Link href={`/vote/${featuredBattle.id}`} className="inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500">
+                  <Link
+                    href={`/vote/${featuredBattle.id}`}
+                    onClick={() => trackPollCardClicked({
+                      poll_id: featuredBattle.id,
+                      section: 'hero',
+                      category: featuredBattle.analyticsCategory,
+                      position: 0,
+                    })}
+                    className="inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-5 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500"
+                  >
                     결과가 궁금하다면 골라보기 →
                   </Link>
                   <Link href="/create" className="inline-flex min-h-11 items-center rounded-xl border border-slate-300 bg-white/70 px-5 text-sm font-bold transition hover:border-blue-500 dark:border-white/15 dark:bg-white/5">
@@ -688,10 +701,16 @@ export default function Home() {
             <div className="text-sm font-bold text-slate-500">인기 투표를 불러오는 중...</div>
           ) : (
             <div className="grid min-w-0 max-w-full items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {popularPolls.map((poll) => (
+              {popularPolls.map((poll, index) => (
                 <Link
                   key={poll.id}
                   href={`/vote/${poll.id}`}
+                  onClick={() => trackPollCardClicked({
+                    poll_id: poll.id,
+                    section: 'popular',
+                    category: poll.category || '커뮤니티',
+                    position: index,
+                  })}
                   className="group flex min-h-52 min-w-0 max-w-full flex-col rounded-2xl border border-slate-200 bg-white p-5 transition hover:-translate-y-1 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-950/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:hover:border-blue-400/50 dark:focus-visible:ring-offset-slate-950"
                 >
                   <h3 className="min-w-0 break-words text-xl font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
@@ -722,7 +741,17 @@ export default function Home() {
           ) : (
             <div className="grid min-w-0 max-w-full gap-4 lg:grid-cols-2">
               {risingPolls.map((poll, index) => (
-                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex w-full min-w-0 max-w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:focus-visible:ring-offset-slate-950">
+                <Link
+                  key={poll.id}
+                  href={`/vote/${poll.id}`}
+                  onClick={() => trackPollCardClicked({
+                    poll_id: poll.id,
+                    section: 'rising',
+                    category: poll.category || '커뮤니티',
+                    position: index,
+                  })}
+                  className="group flex w-full min-w-0 max-w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:focus-visible:ring-offset-slate-950"
+                >
                   <PollOptionImagePreview
                     poll={poll}
                     variant="compact"
@@ -799,8 +828,18 @@ export default function Home() {
             </div>
           ) : (
             <div className="grid min-w-0 max-w-full items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {latestPolls.map((poll) => (
-                <Link key={poll.id} href={`/vote/${poll.id}`} className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-slate-200 bg-white p-5 transition hover:border-blue-400 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-blue-500/[0.06] dark:focus-visible:ring-offset-slate-950">
+              {latestPolls.map((poll, index) => (
+                <Link
+                  key={poll.id}
+                  href={`/vote/${poll.id}`}
+                  onClick={() => trackPollCardClicked({
+                    poll_id: poll.id,
+                    section: 'latest',
+                    category: poll.category || '커뮤니티',
+                    position: index,
+                  })}
+                  className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-slate-200 bg-white p-5 transition hover:border-blue-400 hover:bg-blue-50/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-blue-500/[0.06] dark:focus-visible:ring-offset-slate-950"
+                >
                   <h3 className="min-w-0 break-words text-lg font-bold leading-snug text-slate-950 dark:text-white">{poll.title}</h3>
                   <p className="mt-2 text-xs font-bold text-blue-600 dark:text-blue-300">{getInterestCategory(poll)}</p>
                   <PollOptionImagePreview poll={poll} variant="card" />

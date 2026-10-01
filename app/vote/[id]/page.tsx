@@ -13,6 +13,13 @@ import {
   normalizeOptionImagePaths,
 } from '@/lib/poll-option-image-paths';
 import { getStoredPollOwnerToken } from '@/lib/poll-owner-storage';
+import {
+  trackNextPollClicked,
+  trackPollViewed,
+  trackVoteResultViewed,
+  trackVoteSubmitted,
+  type VoteResultSource,
+} from '@/lib/analytics';
 
 type VotePageParams = { id: string };
 
@@ -152,7 +159,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [userFingerprint, setUserFingerprint] = useState('');
   const [voterId, setVoterId] = useState('');
   const [syncState, setSyncState] = useState<'live' | 'syncing' | 'reconnecting'>('live');
+  const [resultViewSource, setResultViewSource] = useState<VoteResultSource | null>(null);
   const lastSnapshotRef = useRef('');
+  const trackedPollViewRef = useRef<string | null>(null);
+  const trackedResultViewRef = useRef<string | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shareFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,6 +171,12 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     setUserFingerprint(getOrCreateFingerprint());
     setVoterId(getOrCreateVoterId());
   }, []);
+
+  useEffect(() => {
+    trackedPollViewRef.current = null;
+    trackedResultViewRef.current = null;
+    setResultViewSource(null);
+  }, [dbPollId]);
 
   useEffect(() => {
     if (officialPoll) {
@@ -261,9 +277,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       }
       lastSnapshotRef.current = snapshot;
 
+      let analyticsCategory: string | null = null;
+      let analyticsParticipants = 0;
+
       if (officialPoll) {
         const defaultVotes = statsToVotes(officialPoll.stats, officialPoll.participants);
         const mergedVotes = dbPoll?.votes && dbPoll.votes.length === officialPoll.options.length ? dbPoll.votes : defaultVotes;
+        const mergedParticipants = dbPoll?.participants ?? officialPoll.participants;
 
         setIsOfficial(true);
         setPollData({
@@ -272,11 +292,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           category: officialPoll.category,
           options: officialPoll.options,
           votes: mergedVotes,
-          participants: dbPoll?.participants ?? officialPoll.participants,
+          participants: mergedParticipants,
           officialFact: officialPoll.officialFact,
           optionImagePaths: null,
         });
         setBarWidths(calcPercentages(mergedVotes));
+        analyticsCategory = officialPoll.category;
+        analyticsParticipants = mergedParticipants;
       } else if (dbPoll) {
         const safeVotes = dbPoll.votes ?? dbPoll.options.map(() => 0);
         setIsOfficial(false);
@@ -294,24 +316,44 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           ),
         });
         setBarWidths(calcPercentages(safeVotes));
+        analyticsCategory = dbPoll.category || '커뮤니티';
+        analyticsParticipants = dbPoll.participants || 0;
       } else if (!silent) {
         setPollData(null);
       }
 
       const visibleOptions = officialPoll?.options ?? dbPoll?.options ?? [];
       const selectedOptionIndex = json.viewerVote?.optionIndex;
-      if (
+      const hasViewerVote = (
         Number.isInteger(selectedOptionIndex)
         && (selectedOptionIndex as number) >= 0
         && (selectedOptionIndex as number) < visibleOptions.length
-      ) {
+      );
+
+      if (hasViewerVote) {
         setVoted(true);
         setChoice(visibleOptions[selectedOptionIndex as number]);
         setSelectedOptionIndex(selectedOptionIndex as number);
+        setResultViewSource((current) => current ?? 'existing_vote');
       } else if (!silent) {
         setVoted(false);
         setChoice(null);
         setSelectedOptionIndex(null);
+        setResultViewSource(null);
+      }
+
+      if (
+        !silent
+        && analyticsCategory
+        && trackedPollViewRef.current !== dbPollId
+      ) {
+        trackedPollViewRef.current = dbPollId;
+        trackPollViewed({
+          poll_id: id,
+          category: analyticsCategory,
+          participants: analyticsParticipants,
+          viewer_state: hasViewerVote ? 'voted' : 'unvoted',
+        });
       }
 
       setComments(dbComments);
@@ -342,7 +384,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [dbPollId, officialPoll, userFingerprint, voterId]);
+  }, [dbPollId, id, officialPoll, userFingerprint, voterId]);
 
   const scheduleSilentRefresh = useCallback(() => {
     if (silentRefreshTimerRef.current) {
@@ -356,6 +398,19 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   useEffect(() => {
     void fetchAllData();
   }, [fetchAllData]);
+
+  useEffect(() => {
+    if (
+      !pollData
+      || pollData.id !== dbPollId
+      || !voted
+      || !resultViewSource
+      || trackedResultViewRef.current === dbPollId
+    ) return;
+
+    trackedResultViewRef.current = dbPollId;
+    trackVoteResultViewed({ poll_id: id, source: resultViewSource });
+  }, [dbPollId, id, pollData, resultViewSource, voted]);
 
   useEffect(() => {
     if (!dbPollId) return;
@@ -538,6 +593,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
       setSelectedOptionIndex(json.data.optionIndex);
       setBarWidths(calcPercentages(json.data.votes));
+      trackVoteSubmitted({
+        poll_id: id,
+        category: pollData.category,
+        option_index: json.data.optionIndex,
+        vote_action: 'initial',
+      });
+      setResultViewSource('new_vote');
     } catch (error) {
       setPollData(previousPoll);
       setVoted(false);
@@ -588,6 +650,12 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
       setSelectedOptionIndex(json.data.optionIndex);
       setBarWidths(calcPercentages(json.data.votes));
+      trackVoteSubmitted({
+        poll_id: id,
+        category: pollData.category,
+        option_index: json.data.optionIndex,
+        vote_action: 'change',
+      });
     } catch (error) {
       setPollData(previousPoll);
       setChoice(previousChoice);
@@ -880,7 +948,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 {nextPoll ? (
                   <div className="mt-8 border-t border-slate-200 pt-6 dark:border-white/10">
                     <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">하나 더 볼까요?</p>
-                    <Link href={`/vote/${nextPoll.id}`} className="group mt-3 flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10 sm:p-5">
+                    <Link
+                      href={`/vote/${nextPoll.id}`}
+                      onClick={() => trackNextPollClicked({
+                        from_poll_id: id,
+                        to_poll_id: nextPoll.id,
+                      })}
+                      className="group mt-3 flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10 sm:p-5"
+                    >
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-slate-500">다른 사람들은 이것도 궁금해했어요.</p>
                         <h3 className="mt-1 min-w-0 break-words text-base font-bold text-slate-950 dark:text-white sm:text-lg">{nextPoll.title}</h3>

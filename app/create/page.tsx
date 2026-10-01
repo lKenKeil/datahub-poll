@@ -9,6 +9,7 @@ import { PollCategory } from '@/lib/types';
 import type { PollEditLockConfig } from '@/lib/poll-edit-lock';
 import { storePollOwnerToken } from '@/lib/poll-owner-storage';
 import { getUnicodeCodePointLength } from '@/lib/unicode-length';
+import { trackPollCreated } from '@/lib/analytics';
 
 type InterestCategory =
   | '연애·관계'
@@ -414,6 +415,13 @@ export default function CreatePollPage() {
         setErrorMessage('투표 관리 권한 정보를 확인하지 못했습니다. 관리자에게 문의해주세요.');
         return;
       }
+
+      trackPollCreated({
+        poll_id: createdPollId,
+        category: selectedCategory.dbValue,
+        option_count: trimmedOptions.length,
+        image_count: options.reduce((count, option) => count + (option.imageFile ? 1 : 0), 0),
+      });
 
       try {
         storePollOwnerToken(createdPollId, ownerToken);
