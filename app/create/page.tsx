@@ -10,22 +10,13 @@ import type { PollEditLockConfig } from '@/lib/poll-edit-lock';
 import { storePollOwnerToken } from '@/lib/poll-owner-storage';
 import { getUnicodeCodePointLength } from '@/lib/unicode-length';
 import { trackPollCreated } from '@/lib/analytics';
-
-type InterestCategory =
-  | '연애·관계'
-  | '게임'
-  | '스포츠'
-  | '음식'
-  | '엔터·콘텐츠'
-  | 'IT·제품'
-  | '라이프'
-  | '가치관'
-  | '데이터';
+import { CATEGORY_PRESENTATION, type InterestCategory } from '@/lib/category-presentation';
 
 type InterestCategoryOption = {
   label: InterestCategory;
   icon: string;
   description: string;
+  examples: readonly string[];
   dbValue: PollCategory;
 };
 
@@ -57,15 +48,15 @@ type EditLockPresetOption = {
 };
 
 const CATEGORY_OPTIONS: InterestCategoryOption[] = [
-  { label: '연애·관계', icon: '💞', description: '연애, 친구, 인간관계', dbValue: '커뮤니티' },
-  { label: '게임', icon: '🎮', description: '게임과 플레이 취향', dbValue: '커뮤니티' },
-  { label: '스포츠', icon: '⚽', description: '종목, 팀, 선수', dbValue: '라이프스타일' },
-  { label: '음식', icon: '🍜', description: '메뉴와 맛 취향', dbValue: '라이프스타일' },
-  { label: '엔터·콘텐츠', icon: '🎬', description: '영화, 음악, 웹툰', dbValue: '커뮤니티' },
-  { label: 'IT·제품', icon: '📱', description: '기기, 앱, 서비스', dbValue: 'IT/테크' },
-  { label: '라이프', icon: '🌿', description: '일상, 여행, 건강', dbValue: '라이프스타일' },
-  { label: '가치관', icon: '💭', description: '사회, 경제, 삶의 기준', dbValue: '사회/경제' },
-  { label: '데이터', icon: '📊', description: '통계와 객관적 지표', dbValue: '학술/통계' },
+  { ...CATEGORY_PRESENTATION['연애·관계'], icon: '💞', dbValue: '커뮤니티' },
+  { ...CATEGORY_PRESENTATION['게임'], icon: '🎮', dbValue: '커뮤니티' },
+  { ...CATEGORY_PRESENTATION['스포츠'], icon: '⚽', dbValue: '라이프스타일' },
+  { ...CATEGORY_PRESENTATION['음식'], icon: '🍜', dbValue: '라이프스타일' },
+  { ...CATEGORY_PRESENTATION['엔터·콘텐츠'], icon: '🎬', dbValue: '커뮤니티' },
+  { ...CATEGORY_PRESENTATION['IT·제품'], icon: '📱', dbValue: 'IT/테크' },
+  { ...CATEGORY_PRESENTATION['라이프'], icon: '🌿', dbValue: '라이프스타일' },
+  { ...CATEGORY_PRESENTATION['가치관'], icon: '💭', dbValue: '사회/경제' },
+  { ...CATEGORY_PRESENTATION['데이터'], icon: '📊', dbValue: '학술/통계' },
 ];
 
 const MIN_OPTIONS = 2;
@@ -442,22 +433,22 @@ export default function CreatePollPage() {
   };
 
   return (
-    <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-slate-50 pb-24 text-slate-900 dark:bg-[#020617] dark:text-slate-100">
-      <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl dark:border-white/5 dark:bg-[#020617]/80">
+    <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-canvas pb-24 text-ink dark:bg-canvas dark:text-ink">
+      <nav className="sticky top-0 z-50 border-b border-line bg-canvas/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
-          <Link href="/" className="inline-flex min-h-11 items-center text-sm font-bold text-slate-600 transition hover:text-blue-600 dark:text-slate-400 dark:hover:text-white">← 홈으로</Link>
+          <Link href="/" className="inline-flex min-h-11 items-center text-sm font-bold text-muted transition hover:text-link dark:text-muted dark:hover:text-ink">← 홈으로</Link>
           <div className="flex items-center gap-2">
-            <span className="hidden rounded-full bg-blue-500/10 px-3 py-1 text-xs font-bold text-blue-600 dark:text-blue-300 sm:inline-flex">투표 만들기</span>
+            <span className="hidden rounded-full bg-primary-soft px-3 py-1 text-xs font-bold text-link dark:text-link sm:inline-flex">투표 만들기</span>
             <ThemeToggle />
           </div>
         </div>
       </nav>
 
       <div className="mx-auto max-w-[1280px] space-y-4 px-4 pt-4 sm:px-6 sm:pt-6 lg:px-8">
-        <header className="rounded-3xl border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 px-4 py-4 dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] sm:px-6 sm:py-5">
+        <header className="rounded-3xl border border-line bg-hero px-4 py-4 sm:px-6 sm:py-5">
           <div className="max-w-3xl">
-            <h1 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-slate-950 dark:text-white sm:text-3xl">투표 만들기</h1>
-            <p className="mt-1.5 break-keep text-sm font-medium text-slate-600 dark:text-slate-300 sm:text-base">
+            <h1 className="text-2xl font-bold leading-tight tracking-[-0.03em] text-ink dark:text-ink sm:text-3xl">투표 만들기</h1>
+            <p className="mt-1.5 break-keep text-sm font-medium text-muted dark:text-muted sm:text-base">
               궁금한 걸 사람들에게 물어보세요.
             </p>
           </div>
@@ -465,13 +456,13 @@ export default function CreatePollPage() {
 
         <form onSubmit={handleSubmit} className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0 space-y-4">
-            <fieldset className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-5">
+            <fieldset className="rounded-3xl border border-line bg-surface p-4 dark:border-line dark:bg-surface sm:p-5">
               <legend className="sr-only">카테고리</legend>
               <div className="flex items-start gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">1</span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-bold text-white">1</span>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-950 dark:text-white">카테고리</h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">주제 하나를 골라주세요.</p>
+                  <h2 className="text-lg font-bold text-ink dark:text-ink">카테고리</h2>
+                  <p className="text-sm text-muted dark:text-muted">주제 하나를 골라주세요.</p>
                 </div>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2">
@@ -486,28 +477,31 @@ export default function CreatePollPage() {
                         setInterestCategory(option.label);
                       }}
                       aria-pressed={selected}
-                      className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center rounded-xl border px-1.5 py-2 text-center transition active:scale-[0.99] sm:min-h-16 sm:px-2 ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/15 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/60 dark:border-white/10 dark:bg-white/[0.025] dark:hover:bg-blue-500/10'}`}
+                      className={`relative flex min-h-14 min-w-0 flex-col items-center justify-center rounded-xl border px-1.5 py-2 text-center transition active:scale-[0.99] sm:min-h-16 sm:px-2 ${selected ? 'border-primary bg-primary-soft ring-2 ring-primary/20' : 'border-line bg-canvas hover:border-link hover:bg-primary-soft dark:border-line dark:bg-surface-muted dark:hover:bg-primary-soft'}`}
                     >
-                      {selected ? <span aria-hidden="true" className="absolute right-1.5 top-1 text-xs font-bold text-blue-600 dark:text-blue-300">✓</span> : null}
+                      {selected ? <span aria-hidden="true" className="absolute right-1.5 top-1 text-xs font-bold text-link dark:text-link">✓</span> : null}
                       <span className="text-lg leading-none" aria-hidden="true">{option.icon}</span>
-                      <span className="mt-1 block max-w-full truncate text-xs font-bold text-slate-900 dark:text-white sm:text-sm">{option.label}</span>
+                      <span className="mt-1 block max-w-full truncate text-xs font-bold text-ink dark:text-ink sm:text-sm">{option.label}</span>
                     </button>
                   );
                 })}
               </div>
               {selectedCategory ? (
-                <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-xs font-medium leading-relaxed text-slate-600 dark:bg-white/[0.025] dark:text-slate-400" aria-live="polite">
-                  <span className="font-bold text-slate-800 dark:text-slate-200">{selectedCategory.label}</span> · {selectedCategory.description}
-                </p>
+                <div className="mt-3 min-w-0 border-l-2 border-accent pl-3" aria-live="polite" id="category-guidance">
+                  <p className="text-sm font-semibold leading-5 text-ink">
+                    {selectedCategory.label}<span className="font-normal text-muted"> · {selectedCategory.description}</span>
+                  </p>
+                  <p className="mt-1 break-keep text-[13px] leading-5 text-muted">{selectedCategory.examples.join(' · ')}</p>
+                </div>
               ) : null}
             </fieldset>
 
-            <section className="rounded-3xl border border-blue-200 bg-white p-4 shadow-sm shadow-blue-950/[0.03] dark:border-blue-500/25 dark:bg-white/[0.035] sm:p-5">
+            <section className="rounded-3xl border border-line bg-surface p-4 shadow-sm shadow-blue-950/[0.03] dark:border-blue-500/25 dark:bg-surface sm:p-5">
               <div className="flex items-start gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">2</span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-bold text-white">2</span>
                 <div>
-                  <label htmlFor="poll-title" className="text-lg font-bold text-slate-950 dark:text-white">질문</label>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">한눈에 이해할 수 있게 적어주세요.</p>
+                  <label htmlFor="poll-title" className="text-lg font-bold text-ink dark:text-ink">질문</label>
+                  <p className="text-sm text-muted dark:text-muted">한눈에 이해할 수 있게 적어주세요.</p>
                 </div>
               </div>
               <input
@@ -518,23 +512,23 @@ export default function CreatePollPage() {
                   clearError();
                   setTitle(event.target.value);
                 }}
-                className="mt-3 min-h-14 w-full rounded-xl border-2 border-slate-200 bg-slate-50 px-4 py-3 text-base font-bold outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/5 dark:text-white sm:text-lg"
+                className="mt-3 min-h-14 w-full rounded-xl border-2 border-line bg-canvas px-4 py-3 text-base font-bold outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted dark:text-ink sm:text-lg"
                 placeholder="예: 평생 짜장면만 먹기 vs 평생 짬뽕만 먹기"
                 aria-describedby="poll-title-help"
               />
-              <div id="poll-title-help" className="mt-2 flex justify-between gap-4 text-xs font-semibold text-slate-500">
+              <div id="poll-title-help" className="mt-2 flex justify-between gap-4 text-xs font-semibold text-muted">
                 <span>{MIN_TITLE_LENGTH}자 이상 입력해주세요.</span>
                 <span>{titleLength}/{MAX_TITLE_LENGTH}</span>
               </div>
             </section>
 
-            <section className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-5">
+            <section className="rounded-3xl border border-line bg-surface p-4 dark:border-line dark:bg-surface sm:p-5">
               <div className="flex items-start gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">3</span>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-bold text-white">3</span>
                 <div>
-                  <h2 className="text-lg font-bold text-slate-950 dark:text-white">선택지</h2>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">2개부터 최대 {MAX_OPTIONS}개 · 이미지는 선택사항</p>
-                  <p className="mt-0.5 text-xs font-medium text-slate-600 dark:text-slate-400">JPG, PNG, WebP · 파일당 최대 2MB</p>
+                  <h2 className="text-lg font-bold text-ink dark:text-ink">선택지</h2>
+                  <p className="text-sm text-muted dark:text-muted">2개부터 최대 {MAX_OPTIONS}개 · 이미지는 선택사항</p>
+                  <p className="mt-0.5 text-xs font-medium text-muted dark:text-muted">JPG, PNG, WebP · 파일당 최대 2MB</p>
                 </div>
               </div>
 
@@ -544,24 +538,24 @@ export default function CreatePollPage() {
                     key={option.key}
                     onPointerDown={() => activateImageTarget(option.key)}
                     onFocusCapture={() => activateImageTarget(option.key)}
-                    className={`rounded-2xl border bg-slate-50 p-3 transition dark:bg-white/[0.025] ${
+                    className={`rounded-2xl border bg-canvas p-3 transition dark:bg-surface-muted ${
                       activeImageOptionKey === option.key
                         ? 'border-blue-400 ring-2 ring-blue-500/10 dark:border-blue-400/70'
-                        : 'border-slate-200 dark:border-white/10'
+                        : 'border-line dark:border-line'
                     }`}
                   >
                     <div className="mb-2 flex items-center justify-between gap-3">
-                      <label htmlFor={`poll-option-${index}`} className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 text-xs text-blue-600 dark:text-blue-300">{index + 1}</span>
+                      <label htmlFor={`poll-option-${index}`} className="flex items-center gap-2 text-sm font-bold text-ink dark:text-ink">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-soft text-xs text-link dark:text-link">{index + 1}</span>
                         선택지 {index + 1}
                       </label>
                       <div className="flex items-center gap-2">
                         {activeImageOptionKey === option.key ? (
-                          <span className="hidden rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-600 dark:bg-blue-500/15 dark:text-blue-300 sm:inline-flex">
+                          <span className="hidden rounded-full bg-primary-soft px-2 py-1 text-xs font-bold text-link dark:bg-blue-500/15 dark:text-link sm:inline-flex">
                             여기에 붙여넣기
                           </span>
                         ) : null}
-                        <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{getUnicodeCodePointLength(option.text)}/{MAX_OPTION_LENGTH}</span>
+                        <span className="text-xs font-medium text-muted dark:text-muted">{getUnicodeCodePointLength(option.text)}/{MAX_OPTION_LENGTH}</span>
                       </div>
                     </div>
                     <div className="flex min-w-0 gap-2">
@@ -571,14 +565,14 @@ export default function CreatePollPage() {
                         value={option.text}
                         onChange={(event) => handleOptionChange(index, event.target.value)}
                         disabled={isSubmitting}
-                        className="min-w-0 flex-1 rounded-xl border-2 border-slate-200 bg-white p-3.5 text-base font-semibold outline-none transition placeholder:text-slate-400 focus:border-blue-500 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                        className="min-w-0 flex-1 rounded-xl border-2 border-line bg-surface p-3.5 text-base font-semibold outline-none transition placeholder:text-muted focus:border-link dark:border-line dark:bg-surface-muted dark:text-ink"
                         placeholder={index === 0 ? '예: 짜장면' : index === 1 ? '예: 짬뽕' : `선택지 ${index + 1}`}
                       />
                       <button
                         type="button"
                         onClick={() => removeOption(index)}
                         disabled={isSubmitting || options.length <= MIN_OPTIONS}
-                        className="min-h-11 shrink-0 rounded-xl border border-slate-300 px-3 text-sm font-bold text-slate-500 transition hover:border-rose-400 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-30 dark:border-white/15 dark:text-slate-300 sm:px-4"
+                        className="min-h-11 shrink-0 rounded-xl border border-line px-3 text-sm font-bold text-muted transition hover:border-rose-400 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-30 dark:border-line dark:text-muted sm:px-4"
                         aria-label={`선택지 ${index + 1} 삭제`}
                       >
                         삭제
@@ -604,11 +598,11 @@ export default function CreatePollPage() {
 
                     {option.previewUrl ? (
                       <div
-                        className="mt-3 overflow-hidden rounded-xl bg-white outline-none transition focus:ring-2 focus:ring-blue-500/20 dark:bg-white/5"
+                        className="mt-3 overflow-hidden rounded-xl bg-surface outline-none transition focus:ring-2 focus:ring-link/20 dark:bg-surface-muted"
                         tabIndex={0}
                         aria-label={`선택지 ${index + 1} 이미지 영역. 붙여넣거나 파일을 선택할 수 있습니다.`}
                       >
-                        <div className="relative aspect-video max-h-52 w-full overflow-hidden bg-slate-200 dark:bg-slate-900">
+                        <div className="relative aspect-video max-h-52 w-full overflow-hidden bg-surface-muted dark:bg-surface-muted">
                           <Image
                             src={option.previewUrl}
                             alt=""
@@ -619,14 +613,14 @@ export default function CreatePollPage() {
                           />
                         </div>
                         <div className="p-2.5">
-                          <p className="mb-2 hidden text-center text-xs font-semibold text-slate-500 sm:block">Ctrl+V 또는 Cmd+V로도 바꿀 수 있어요.</p>
+                          <p className="mb-2 hidden text-center text-xs font-semibold text-muted sm:block">Ctrl+V 또는 Cmd+V로도 바꿀 수 있어요.</p>
                           <div className="flex gap-2">
                             <button
                               type="button"
                               onClick={() => imageInputRefs.current.get(option.key)?.click()}
                               disabled={isSubmitting}
                               aria-label={`선택지 ${index + 1} 이미지 변경`}
-                              className="min-h-11 flex-1 rounded-xl border border-blue-300 px-2 text-sm font-bold text-blue-600 transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:text-blue-300 dark:hover:bg-blue-500/10 sm:px-4"
+                              className="min-h-11 flex-1 rounded-xl border border-blue-300 px-2 text-sm font-bold text-link transition hover:bg-primary-soft disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:text-link dark:hover:bg-primary-soft sm:px-4"
                             >
                               이미지 변경
                             </button>
@@ -650,10 +644,10 @@ export default function CreatePollPage() {
                         }}
                         disabled={isSubmitting}
                         aria-label={`선택지 ${index + 1} 이미지 영역. 붙여넣거나 파일을 선택할 수 있습니다.`}
-                        className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-white px-3 py-2 text-sm font-bold text-blue-600 transition hover:border-blue-500 hover:bg-blue-50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:bg-white/[0.025] dark:text-blue-300 dark:hover:bg-blue-500/10"
+                        className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-surface px-3 py-2 text-sm font-bold text-link transition hover:border-link hover:bg-primary-soft focus:border-link focus:ring-2 focus:ring-link/20 disabled:cursor-wait disabled:opacity-50 dark:border-blue-500/30 dark:bg-surface-muted dark:text-link dark:hover:bg-primary-soft"
                       >
                         <span>+ 이미지 추가</span>
-                        <span className="hidden text-xs font-medium text-slate-500 dark:text-slate-400 sm:inline">파일 선택 · Ctrl/Cmd+V 붙여넣기</span>
+                        <span className="hidden text-xs font-medium text-muted dark:text-muted sm:inline">파일 선택 · Ctrl/Cmd+V 붙여넣기</span>
                       </button>
                     )}
                   </div>
@@ -661,7 +655,7 @@ export default function CreatePollPage() {
               </div>
 
               {selectedImageCount > 0 ? (
-                <p className="mt-4 text-center text-xs font-bold text-slate-500" aria-live="polite">
+                <p className="mt-4 text-center text-xs font-bold text-muted" aria-live="polite">
                   이미지 {selectedImageCount}개 · {(selectedImageBytes / 1024 / 1024).toFixed(2)}MB / 약 4.3MB
                 </p>
               ) : null}
@@ -670,16 +664,16 @@ export default function CreatePollPage() {
                 type="button"
                 onClick={addOption}
                 disabled={isSubmitting || options.length >= MAX_OPTIONS}
-                className="mt-3 min-h-11 w-full rounded-xl border border-dashed border-blue-400 px-4 text-sm font-bold text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 dark:border-blue-500/40 dark:text-blue-300 dark:hover:bg-blue-500/10"
+                className="mt-3 min-h-11 w-full rounded-xl border border-dashed border-blue-400 px-4 text-sm font-bold text-link transition hover:bg-primary-soft disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 dark:border-blue-500/40 dark:text-link dark:hover:bg-primary-soft"
               >
                 {options.length >= MAX_OPTIONS ? `선택지는 ${MAX_OPTIONS}개까지 추가할 수 있어요` : '+ 선택지 추가'}
               </button>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-5">
+            <section className="rounded-2xl border border-line bg-surface p-4 dark:border-line dark:bg-surface sm:p-5">
               <div>
-                <label htmlFor="poll-description" className="text-base font-bold text-slate-950 dark:text-white">설명 또는 참고정보 <span className="text-xs font-medium text-slate-600 dark:text-slate-400">선택</span></label>
-                <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">필요한 배경이나 조건만 짧게 적어주세요.</p>
+                <label htmlFor="poll-description" className="text-base font-bold text-ink dark:text-ink">설명 또는 참고정보 <span className="text-xs font-medium text-muted dark:text-muted">선택</span></label>
+                <p className="mt-0.5 text-sm text-muted dark:text-muted">필요한 배경이나 조건만 짧게 적어주세요.</p>
               </div>
               <textarea
                 id="poll-description"
@@ -688,30 +682,30 @@ export default function CreatePollPage() {
                   clearError();
                   setDescription(event.target.value);
                 }}
-                className="mt-3 h-24 w-full resize-none rounded-xl border-2 border-slate-200 bg-slate-50 p-3.5 text-base font-medium outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                className="mt-3 h-24 w-full resize-none rounded-xl border-2 border-line bg-canvas p-3.5 text-base font-medium outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted dark:text-ink"
                 placeholder="예: 가격은 같다고 가정하고 골라주세요."
               />
-              <p className="mt-2 text-right text-xs font-semibold text-slate-500">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
+              <p className="mt-2 text-right text-xs font-semibold text-muted">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
             </section>
 
-            <details className="group rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.035] sm:p-5">
+            <details className="group rounded-2xl border border-line bg-surface p-4 dark:border-line dark:bg-surface sm:p-5">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30">
                 <div>
-                  <h2 className="text-base font-bold text-slate-950 dark:text-white">고급 설정 <span className="text-xs font-medium text-slate-500">선택</span></h2>
-                  <p className="mt-0.5 text-xs font-semibold text-slate-500">수정 가능 범위 · {selectedEditLock.label}</p>
+                  <h2 className="text-base font-bold text-ink dark:text-ink">고급 설정 <span className="text-xs font-medium text-muted">선택</span></h2>
+                  <p className="mt-0.5 text-xs font-semibold text-muted">수정 가능 범위 · {selectedEditLock.label}</p>
                 </div>
-                <span aria-hidden="true" className="text-xl font-black text-blue-600 transition group-open:rotate-45 dark:text-blue-300">+</span>
+                <span aria-hidden="true" className="text-xl font-black text-link transition group-open:rotate-45 dark:text-link">+</span>
               </summary>
 
-              <fieldset className="mt-5 border-t border-slate-200 pt-5 dark:border-white/10">
-                <legend className="text-sm font-black text-slate-900 dark:text-white">질문·선택지·이미지 수정 가능 기간</legend>
+              <fieldset className="mt-5 border-t border-line pt-5 dark:border-line">
+                <legend className="text-sm font-black text-ink dark:text-ink">질문·선택지·이미지 수정 가능 기간</legend>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {EDIT_LOCK_PRESETS.map((preset) => {
                     const selected = editLockPreset === preset.value;
                     return (
                       <label
                         key={preset.value}
-                        className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-blue-500/40 ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:border-blue-300 dark:border-white/10 dark:bg-white/[0.025]'}`}
+                        className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-2xl border p-4 transition focus-within:ring-2 focus-within:ring-link/40 ${selected ? 'border-primary bg-primary-soft ring-2 ring-primary/20' : 'border-line bg-canvas hover:border-blue-300 dark:border-line dark:bg-surface-muted'}`}
                       >
                         <input
                           type="radio"
@@ -723,8 +717,8 @@ export default function CreatePollPage() {
                           className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
                         />
                         <span className="min-w-0">
-                          <span className="block text-sm font-bold text-slate-900 dark:text-white">{preset.label}{selected ? ' · 선택됨' : ''}</span>
-                          <span className="mt-1 block break-keep text-xs font-semibold leading-relaxed text-slate-500">{preset.description}</span>
+                          <span className="block text-sm font-bold text-ink dark:text-ink">{preset.label}{selected ? ' · 선택됨' : ''}</span>
+                          <span className="mt-1 block break-keep text-xs font-semibold leading-relaxed text-muted">{preset.description}</span>
                         </span>
                       </label>
                     );
@@ -738,38 +732,38 @@ export default function CreatePollPage() {
           </div>
 
           <aside className="min-w-0 space-y-4 lg:sticky lg:top-24">
-            <details className="group rounded-3xl border border-blue-200 bg-gradient-to-br from-white to-blue-50 p-4 shadow-lg shadow-blue-950/[0.04] dark:border-blue-500/20 dark:from-slate-900 dark:to-[#07152f] sm:p-5">
+            <details className="group rounded-3xl border border-line bg-hero p-4 shadow-lg shadow-blue-950/[0.04] sm:p-5">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 lg:cursor-default">
                 <div>
-                  <span className="text-sm font-bold text-blue-600 dark:text-blue-300">미리보기</span>
-                  <p className="mt-0.5 text-xs text-slate-500 lg:hidden">눌러서 상세 화면 모습을 확인해보세요.</p>
-                  <p className="mt-0.5 hidden text-xs text-slate-500 lg:block">상세 화면에서 보일 모습을 확인해보세요.</p>
+                  <span className="text-sm font-bold text-link dark:text-link">미리보기</span>
+                  <p className="mt-0.5 text-xs text-muted lg:hidden">눌러서 상세 화면 모습을 확인해보세요.</p>
+                  <p className="mt-0.5 hidden text-xs text-muted lg:block">상세 화면에서 보일 모습을 확인해보세요.</p>
                 </div>
-                <span aria-hidden="true" className="text-lg font-bold text-blue-600 transition group-open:rotate-45 dark:text-blue-300 lg:hidden">+</span>
+                <span aria-hidden="true" className="text-lg font-bold text-link transition group-open:rotate-45 dark:text-link lg:hidden">+</span>
               </summary>
 
-              <div className="mt-4 hidden border-t border-blue-200/70 pt-4 group-open:block dark:border-blue-500/15 lg:block">
+              <div className="mt-4 hidden border-t border-line pt-4 group-open:block dark:border-blue-500/15 lg:block">
                 <div className="flex justify-end">
-                  <span className="shrink-0 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-bold text-white">
+                  <span className="shrink-0 rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-white">
                     {selectedCategory ? `${selectedCategory.icon} ${selectedCategory.label}` : '카테고리 선택'}
                   </span>
                 </div>
 
-                <h2 className="mt-4 break-words text-xl font-bold leading-snug text-slate-950 dark:text-white sm:text-2xl">
+                <h2 className="mt-4 break-words text-xl font-bold leading-snug text-ink dark:text-ink sm:text-2xl">
                   {trimmedTitle || '여기에 투표 질문이 표시돼요.'}
                 </h2>
 
                 {description.trim() ? (
-                  <p className="mt-3 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-slate-600 dark:text-slate-300">{description.trim()}</p>
+                  <p className="mt-3 whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-muted dark:text-muted">{description.trim()}</p>
                 ) : (
-                  <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">설명을 적으면 이곳에 함께 표시돼요.</p>
+                  <p className="mt-3 text-sm text-muted dark:text-muted">설명을 적으면 이곳에 함께 표시돼요.</p>
                 )}
 
                 <div className="mt-5 grid gap-2">
                   {options.map((option, index) => (
-                    <div key={option.key} className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 p-2 dark:border-white/10 dark:bg-white/5">
+                    <div key={option.key} className="overflow-hidden rounded-2xl border border-line bg-surface p-2 dark:border-line dark:bg-surface-muted">
                       {option.previewUrl ? (
-                        <div className="relative aspect-[4/3] max-h-48 w-full overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-900">
+                        <div className="relative aspect-[4/3] max-h-48 w-full overflow-hidden rounded-xl bg-surface-muted dark:bg-surface-muted">
                           <Image
                             src={option.previewUrl}
                             alt=""
@@ -781,15 +775,15 @@ export default function CreatePollPage() {
                         </div>
                       ) : null}
                       <div className="flex min-h-12 items-center gap-3 px-2 py-2">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-xs font-bold text-blue-600 dark:text-blue-300">{index + 1}</span>
-                        <span className={`min-w-0 break-words text-sm font-bold ${option.text.trim() ? 'text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-xs font-bold text-link dark:text-link">{index + 1}</span>
+                        <span className={`min-w-0 break-words text-sm font-bold ${option.text.trim() ? 'text-ink dark:text-ink' : 'text-muted dark:text-muted'}`}>
                           {option.text.trim() || `선택지 ${index + 1}`}
                         </span>
                       </div>
                     </div>
                   ))}
                 </div>
-                <p className="mt-4 text-center text-xs font-medium text-slate-600 dark:text-slate-400">선택하면 결과를 확인할 수 있어요.</p>
+                <p className="mt-4 text-center text-xs font-medium text-muted dark:text-muted">선택하면 결과를 확인할 수 있어요.</p>
               </div>
             </details>
 
@@ -805,14 +799,14 @@ export default function CreatePollPage() {
                 <p className="mt-2 text-xs font-semibold leading-relaxed text-amber-800/80 dark:text-amber-100/70">
                   이 키를 잃으면 로그인 없이 투표 관리 권한을 복구할 수 없습니다. 다른 사람에게 공유하지 마세요.
                 </p>
-                <code className="mt-3 block break-all rounded-xl border border-amber-300/60 bg-white px-3 py-2 text-xs font-bold text-slate-800 dark:border-amber-500/20 dark:bg-slate-950 dark:text-slate-100">
+                <code className="mt-3 block break-all rounded-xl border border-amber-300/60 bg-surface px-3 py-2 text-xs font-bold text-ink dark:border-amber-500/20 dark:bg-surface-muted dark:text-ink">
                   {ownerTokenFallback.ownerToken}
                 </code>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => void copyFallbackOwnerToken()}
-                    className="min-h-11 rounded-xl bg-amber-500 px-4 text-sm font-black text-slate-950 transition hover:bg-amber-400"
+                    className="min-h-11 rounded-xl bg-amber-500 px-4 text-sm font-black text-ink transition hover:bg-amber-400"
                   >
                     관리 키 복사
                   </button>
@@ -837,11 +831,11 @@ export default function CreatePollPage() {
               type="submit"
               disabled={isSubmitting || Boolean(ownerTokenFallback)}
               aria-busy={isSubmitting}
-              className="min-h-14 w-full rounded-xl bg-blue-600 px-5 py-4 text-lg font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-60"
+              className="min-h-14 w-full rounded-xl bg-primary px-5 py-4 text-lg font-black text-white shadow-sm transition hover:bg-primary-hover disabled:cursor-wait disabled:opacity-60"
             >
               {isSubmitting ? '만드는 중...' : '투표 만들기'}
             </button>
-            <p className="text-center text-xs font-medium text-slate-600 dark:text-slate-400">투표를 만들면 바로 상세 화면으로 이동해요.</p>
+            <p className="text-center text-xs font-medium text-muted dark:text-muted">투표를 만들면 바로 상세 화면으로 이동해요.</p>
           </aside>
         </form>
       </div>

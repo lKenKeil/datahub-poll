@@ -541,15 +541,15 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   }, [dbPollId, loadedPollId]);
 
   if (loading) {
-    return <div className="min-h-screen bg-slate-50 dark:bg-[#020617] flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-lg">투표를 불러오는 중...</div>;
+    return <div className="min-h-screen bg-canvas dark:bg-canvas flex items-center justify-center text-muted dark:text-muted font-bold text-lg">투표를 불러오는 중...</div>;
   }
 
   if (!pollData) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 text-center dark:bg-[#020617]">
-        <h1 className="text-xl font-bold text-slate-700 dark:text-slate-200">{pollLoadError || '질문을 찾을 수 없어요.'}</h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400">삭제되었거나 운영 정책에 따라 숨겨진 질문일 수 있습니다.</p>
-        <Link href="/" className="inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white">다른 질문 둘러보기</Link>
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-canvas px-4 text-center dark:bg-canvas">
+        <h1 className="text-xl font-bold text-ink dark:text-ink">{pollLoadError || '질문을 찾을 수 없어요.'}</h1>
+        <p className="text-sm text-muted dark:text-muted">삭제되었거나 운영 정책에 따라 숨겨진 질문일 수 있습니다.</p>
+        <Link href="/" className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-bold text-white">다른 질문 둘러보기</Link>
       </main>
     );
   }
@@ -839,16 +839,16 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   };
 
   return (
-    <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-slate-50 pb-24 text-slate-900 dark:bg-[#020617] dark:text-slate-200">
-      <nav className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-xl dark:border-white/5 dark:bg-[#020617]/80">
+    <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-canvas pb-24 text-ink dark:bg-canvas dark:text-ink">
+      <nav className="sticky top-0 z-50 border-b border-line bg-canvas/95 backdrop-blur-xl">
         <div className="mx-auto flex min-w-0 max-w-[1440px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
-          <Link href="/" className="inline-flex min-h-11 items-center text-sm font-bold text-slate-600 transition-colors hover:text-blue-600 dark:text-slate-400 dark:hover:text-white">← 홈으로</Link>
+          <Link href="/" className="inline-flex min-h-11 items-center text-sm font-bold text-muted transition-colors hover:text-link dark:text-muted dark:hover:text-ink">← 홈으로</Link>
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-2 sm:flex">
-            <span className={`rounded-full px-3 py-1 text-xs font-bold ${isOfficial ? 'bg-blue-500/10 text-blue-600 dark:text-blue-300' : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300'}`}>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${isOfficial ? 'bg-primary-soft text-link dark:text-link' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
               {isOfficial ? '공식 데이터 기반' : '커뮤니티 투표'}
             </span>
-            <span className={`hidden rounded-full px-3 py-1 text-xs font-bold sm:inline-flex ${voted ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300'}`}>
+            <span className={`hidden rounded-full px-3 py-1 text-xs font-bold sm:inline-flex ${voted ? 'bg-primary text-white' : 'bg-surface-muted text-muted dark:bg-white/10 dark:text-muted'}`}>
               {voted ? '참여 완료' : '투표 진행 중'}
             </span>
             </div>
@@ -858,28 +858,27 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       </nav>
 
       <div className="mx-auto max-w-[1280px] space-y-6 px-4 pt-6 sm:px-6 md:pt-8 lg:px-8">
-        <header className="relative overflow-hidden rounded-3xl border border-blue-200/70 bg-gradient-to-br from-white via-blue-50 to-cyan-50 p-5 dark:border-blue-500/20 dark:from-slate-900 dark:via-[#07152f] dark:to-[#052631] md:p-8">
-          <div aria-hidden="true" className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-cyan-400/20 blur-3xl" />
+        <header className="relative overflow-hidden rounded-3xl border border-line bg-hero p-5 md:p-8">
           <div className="relative max-w-4xl">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">{pollData.category || '기타'}</span>
-              <span className={`rounded-full px-3 py-1 text-xs font-bold ${voted ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-white/80 text-slate-600 dark:bg-white/10 dark:text-slate-300'}`}>
+              <span className="rounded-full bg-primary px-3 py-1 text-xs font-black text-white">{pollData.category || '기타'}</span>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${voted ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-surface text-muted dark:bg-white/10 dark:text-muted'}`}>
                 {voted ? '참여 완료' : '투표 진행 중'}
               </span>
             </div>
-            <h1 className="mt-4 break-words text-3xl font-black leading-tight tracking-[-0.035em] text-slate-950 dark:text-white sm:text-4xl">{pollData.title}</h1>
-            <p className="mt-3 text-sm font-medium text-slate-600 dark:text-slate-300 sm:text-base">
+            <h1 className="mt-4 break-words text-3xl font-black leading-tight tracking-[-0.035em] text-ink dark:text-ink sm:text-4xl">{pollData.title}</h1>
+            <p className="mt-3 text-sm font-medium text-muted dark:text-muted sm:text-base">
               {isRevoting ? '기존 선택을 다른 선택지로 바꿔보세요.' : voted ? '내 선택과 전체 결과를 비교해보세요.' : '당신의 선택은 어느 쪽인가요? 하나를 고르면 바로 결과를 볼 수 있어요.'}
             </p>
-            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-slate-600 dark:text-slate-400">
+            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm font-medium text-muted dark:text-muted">
               <span>참여자 {pollData.participants.toLocaleString()}명</span>
               <span aria-hidden="true" className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
               <span>의견 {comments.length}개</span>
               <span aria-hidden="true" className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
-              <span className={syncState === 'reconnecting' ? 'text-rose-500' : syncState === 'syncing' ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-300'}>
+              <span className={syncState === 'reconnecting' ? 'text-rose-700 dark:text-rose-300' : syncState === 'syncing' ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}>
                 {syncState === 'live' ? '실시간 반영 중' : syncState === 'syncing' ? '결과 동기화 중' : '재연결 중'}
               </span>
-              {reportable ? <button type="button" onClick={() => setReportTarget({ type: 'poll', id: dbPollId, label: '질문' })} className="inline-flex min-h-11 items-center rounded-xl px-2 text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white" aria-label="이 질문 신고하기">신고</button> : null}
+              {reportable ? <button type="button" onClick={() => setReportTarget({ type: 'poll', id: dbPollId, label: '질문' })} className="inline-flex min-h-11 items-center rounded-xl px-2 text-xs text-muted hover:text-ink dark:text-muted dark:hover:text-ink" aria-label="이 질문 신고하기">신고</button> : null}
             </div>
           </div>
         </header>
@@ -891,16 +890,16 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         ) : null}
 
         <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="min-w-0 rounded-3xl border border-slate-200 bg-white p-4 shadow-xl shadow-slate-950/[0.04] dark:border-white/10 dark:bg-white/[0.035] sm:p-6 md:p-8">
+          <section className="min-w-0 rounded-3xl border border-line bg-surface p-4 shadow-xl shadow-slate-950/[0.04] dark:border-line dark:bg-surface sm:p-6 md:p-8">
             {!voted || isRevoting ? (
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <h2 className="text-2xl font-bold text-slate-950 dark:text-white">{isRevoting ? '선택을 바꿔볼까요?' : '당신의 선택은?'}</h2>
-                    <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">{isRevoting ? '같은 선택지를 누르면 변경 없이 결과로 돌아가요.' : '선택하면 전체 결과를 확인할 수 있어요.'}</p>
+                    <h2 className="text-2xl font-bold text-ink dark:text-ink">{isRevoting ? '선택을 바꿔볼까요?' : '당신의 선택은?'}</h2>
+                    <p className="mt-2 text-sm text-muted dark:text-muted">{isRevoting ? '같은 선택지를 누르면 변경 없이 결과로 돌아가요.' : '선택하면 전체 결과를 확인할 수 있어요.'}</p>
                   </div>
                   {isRevoting ? (
-                    <button type="button" onClick={() => setIsRevoting(false)} className="text-sm font-black text-slate-500 hover:text-blue-600">취소</button>
+                    <button type="button" onClick={() => setIsRevoting(false)} className="text-sm font-black text-muted hover:text-link">취소</button>
                   ) : null}
                 </div>
                 <div className="relative mt-7 grid gap-3 sm:grid-cols-2">
@@ -912,10 +911,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                         key={`${option}_${index}`}
                         type="button"
                         onClick={() => (isRevoting ? handleRevote(index) : handleVote(index))}
-                        className={`group w-full min-w-0 overflow-hidden rounded-2xl border text-left transition duration-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:scale-[0.99] dark:focus-visible:ring-offset-slate-950 ${imageUrl ? 'flex flex-col p-3' : 'flex min-h-28 items-center justify-between gap-4 p-5'} ${isCurrent ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/15 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50 hover:-translate-y-0.5 hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10'}`}
+                        className={`group w-full min-w-0 overflow-hidden rounded-2xl border text-left transition duration-200 focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 active:scale-[0.99] dark:focus-visible:ring-offset-canvas ${imageUrl ? 'flex flex-col p-3' : 'flex min-h-28 items-center justify-between gap-4 p-5'} ${isCurrent ? 'border-primary bg-primary-soft ring-2 ring-primary/20' : 'border-line bg-canvas hover:-translate-y-0.5 hover:border-link hover:bg-primary-soft dark:border-line dark:bg-surface dark:hover:bg-primary-soft'}`}
                       >
                         {imageUrl ? (
-                          <span className="relative block aspect-[4/3] max-h-72 w-full overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-900">
+                          <span className="relative block aspect-[4/3] max-h-72 w-full overflow-hidden rounded-xl bg-surface-muted dark:bg-surface-muted">
                             <Image
                               src={imageUrl}
                               alt=""
@@ -928,10 +927,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                         ) : null}
                         <span className={`flex w-full min-w-0 items-center justify-between gap-3 ${imageUrl ? 'px-1 pb-1 pt-4' : ''}`}>
                           <span className="flex min-w-0 items-center gap-3">
-                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${isCurrent ? 'bg-blue-600 text-white' : 'bg-white text-blue-600 shadow-sm dark:bg-white/10 dark:text-blue-300'}`}>{index + 1}</span>
-                            <span className="min-w-0 break-words text-base font-bold text-slate-900 dark:text-white sm:text-lg">{option}</span>
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-black ${isCurrent ? 'bg-primary text-white' : 'bg-surface text-link shadow-sm dark:bg-white/10 dark:text-link'}`}>{index + 1}</span>
+                            <span className="min-w-0 break-words text-base font-bold text-ink dark:text-ink sm:text-lg">{option}</span>
                           </span>
-                          <span className={`hidden shrink-0 text-xs font-black text-blue-600 transition dark:text-blue-300 sm:inline ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'}`}>
+                          <span className={`hidden shrink-0 text-xs font-black text-link transition dark:text-link sm:inline ${isCurrent ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'}`}>
                             {isCurrent ? '현재 선택 ✓' : '선택 →'}
                           </span>
                         </span>
@@ -939,23 +938,23 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     );
                   })}
                   {pollData.options.length === 2 ? (
-                    <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-bold tracking-wider text-slate-600 shadow-sm dark:border-white/15 dark:bg-slate-900 dark:text-slate-300">VS</span>
+                    <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-surface text-xs font-bold tracking-wider text-muted shadow-sm dark:border-line dark:bg-surface-muted dark:text-muted">VS</span>
                   ) : null}
                 </div>
-                <p className="mt-5 text-center text-xs font-medium text-slate-600 dark:text-slate-400">하나를 고르면 바로 다른 사람들의 선택이 보여요. 투표 후에도 선택을 바꿀 수 있어요.
+                <p className="mt-5 text-center text-xs font-medium text-muted dark:text-muted">하나를 고르면 바로 다른 사람들의 선택이 보여요. 투표 후에도 선택을 바꿀 수 있어요.
                 </p>
               </div>
             ) : (
               <div aria-live="polite">
-                <p className="mb-3 text-sm font-bold text-slate-600 dark:text-slate-300">사람들은 이렇게 골랐어요.</p>
-                <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-5 sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-6">
+                <p className="mb-3 text-sm font-bold text-muted dark:text-muted">사람들은 이렇게 골랐어요.</p>
+                <div className="rounded-2xl border border-blue-500/20 bg-primary-soft p-5 sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-6">
                   <div className="min-w-0">
-                    <span className="inline-flex rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">내 선택</span>
-                    <h2 className="mt-3 min-w-0 break-words text-xl font-black text-slate-950 dark:text-white sm:text-2xl">{choice} ✓</h2>
-                    <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-300">총 {pollData.participants.toLocaleString()}명이 참여했어요.</p>
+                    <span className="inline-flex rounded-full bg-primary px-3 py-1 text-xs font-black text-white">내 선택</span>
+                    <h2 className="mt-3 min-w-0 break-words text-xl font-black text-ink dark:text-ink sm:text-2xl">{choice} ✓</h2>
+                    <p className="mt-2 text-sm font-medium text-muted dark:text-muted">총 {pollData.participants.toLocaleString()}명이 참여했어요.</p>
                   </div>
                   <div className="mt-5 shrink-0 border-t border-blue-500/15 pt-4 sm:mt-0 sm:border-l sm:border-t-0 sm:pl-6 sm:pt-0 sm:text-right">
-                    <p className="text-5xl font-black tracking-[-0.05em] text-blue-600 dark:text-blue-300">{selectedPercentage}%</p>
+                    <p className="text-5xl font-black tracking-[-0.05em] text-link dark:text-link">{selectedPercentage}%</p>
                     <p className="mt-1 text-sm font-bold text-blue-800 dark:text-blue-200">가 같은 선택을 했어요</p>
                   </div>
                 </div>
@@ -967,10 +966,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     const voteCount = pollData.votes[index] ?? 0;
                     const imageUrl = optionImageUrls[index];
                     return (
-                      <div key={`${option}_${index}`} className={`rounded-2xl border p-4 sm:p-5 ${isSelected ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-500/10 dark:bg-blue-500/10' : 'border-slate-200 bg-slate-50/70 dark:border-white/10 dark:bg-white/[0.025]'}`}>
+                      <div key={`${option}_${index}`} className={`rounded-2xl border p-4 sm:p-5 ${isSelected ? 'border-blue-500 bg-blue-50/80 ring-2 ring-blue-500/10 dark:bg-blue-500/10' : 'border-line bg-slate-50/70 dark:border-line dark:bg-surface-muted'}`}>
                         <div className={imageUrl ? 'grid gap-4 sm:grid-cols-[minmax(140px,220px)_minmax(0,1fr)] sm:items-center' : ''}>
                           {imageUrl ? (
-                            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-200 dark:bg-slate-900">
+                            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-surface-muted dark:bg-surface-muted">
                               <Image
                                 src={imageUrl}
                                 alt=""
@@ -985,15 +984,15 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                             <div className="flex items-start justify-between gap-4">
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className={`break-words font-black ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'}`}>{option}</span>
-                                  {isSelected ? <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs font-bold text-white">내 선택 ✓</span> : null}
+                                  <span className={`break-words font-black ${isSelected ? 'text-link dark:text-link' : 'text-ink dark:text-ink'}`}>{option}</span>
+                                  {isSelected ? <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-white">내 선택 ✓</span> : null}
                                 </div>
-                                <p className="mt-1 text-xs font-semibold text-slate-500">{voteCount.toLocaleString()}표</p>
+                                <p className="mt-1 text-xs font-semibold text-muted">{voteCount.toLocaleString()}표</p>
                               </div>
-                              <span className={`text-2xl font-black ${isSelected ? 'text-blue-600 dark:text-blue-300' : 'text-slate-900 dark:text-white'}`}>{percentage}%</span>
+                              <span className={`text-2xl font-black ${isSelected ? 'text-link dark:text-link' : 'text-ink dark:text-ink'}`}>{percentage}%</span>
                             </div>
-                            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-white/10">
-                              <div className={`h-full rounded-full ${resultRevealAnimating ? 'transition-[width] duration-500 ease-out motion-reduce:transition-none' : ''} ${isSelected ? 'bg-gradient-to-r from-blue-600 to-cyan-400' : 'bg-slate-400 dark:bg-slate-500'}`} style={{ width: `${percentage}%` }} />
+                            <div className="mt-4 h-3 overflow-hidden rounded-full bg-surface-muted dark:bg-white/10">
+                              <div className={`h-full rounded-full ${resultRevealAnimating ? 'transition-[width] duration-500 ease-out motion-reduce:transition-none' : ''} ${isSelected ? 'bg-primary' : 'bg-slate-400 dark:bg-slate-500'}`} style={{ width: `${percentage}%` }} />
                             </div>
                           </div>
                         </div>
@@ -1003,38 +1002,38 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 </div>
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <button type="button" onClick={() => setIsRevoting(true)} className="min-h-11 flex-1 rounded-xl border border-blue-500/40 px-5 py-3 text-sm font-bold text-blue-700 transition hover:border-blue-600 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-blue-500/10">다시 투표하기</button>
+                  <button type="button" onClick={() => setIsRevoting(true)} className="min-h-11 flex-1 rounded-xl border border-blue-500/40 px-5 py-3 text-sm font-bold text-link transition hover:border-blue-600 hover:bg-primary-soft dark:text-link dark:hover:bg-primary-soft">다시 투표하기</button>
                   <button
                     type="button"
                     onClick={() => void handleShare()}
                     disabled={isSharing}
                     aria-label={`${pollData.title} 공유하기`}
                     aria-busy={isSharing}
-                    className="min-h-11 flex-1 rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-70"
+                    className="min-h-11 flex-1 rounded-xl bg-primary px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-primary-hover disabled:cursor-wait disabled:opacity-70"
                   >
                     {isSharing ? '공유 준비 중...' : '공유하기'}
                   </button>
                 </div>
 
                 {nextPoll ? (
-                  <div className="mt-8 border-t border-slate-200 pt-6 dark:border-white/10">
-                    <p className="text-xs font-black uppercase tracking-[0.14em] text-blue-600 dark:text-blue-300">하나 더 볼까요?</p>
+                  <div className="mt-8 border-t border-line pt-6 dark:border-line">
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-link dark:text-link">하나 더 볼까요?</p>
                     <Link
                       href={`/vote/${nextPoll.id}`}
                       onClick={() => trackNextPollClicked({
                         from_poll_id: id,
                         to_poll_id: nextPoll.id,
                       })}
-                      className="group mt-3 flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:border-blue-500 hover:bg-blue-50 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-blue-500/10 sm:p-5"
+                      className="group mt-3 flex min-w-0 items-center justify-between gap-4 rounded-2xl border border-line bg-canvas p-4 transition hover:border-link hover:bg-primary-soft dark:border-line dark:bg-surface dark:hover:bg-primary-soft sm:p-5"
                     >
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-500">다른 사람들은 이것도 궁금해했어요.</p>
-                        <h3 className="mt-1 min-w-0 break-words text-base font-bold text-slate-950 dark:text-white sm:text-lg">{nextPoll.title}</h3>
+                        <p className="text-xs font-bold text-muted">다른 사람들은 이것도 궁금해했어요.</p>
+                        <h3 className="mt-1 min-w-0 break-words text-base font-bold text-ink dark:text-ink sm:text-lg">{nextPoll.title}</h3>
                         {nextPoll.options.length >= 2 ? (
-                          <p className="mt-2 truncate text-xs font-medium text-slate-600 dark:text-slate-400">{nextPoll.options[0]} <span className="mx-1 font-black text-blue-500">VS</span> {nextPoll.options[1]}</p>
+                          <p className="mt-2 truncate text-xs font-medium text-muted dark:text-muted">{nextPoll.options[0]} <span className="mx-1 font-black text-link">VS</span> {nextPoll.options[1]}</p>
                         ) : null}
                       </div>
-                      <span className="shrink-0 text-sm font-black text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">골라보기 →</span>
+                      <span className="shrink-0 text-sm font-black text-link transition-transform group-hover:translate-x-1 dark:text-link">골라보기 →</span>
                     </Link>
                   </div>
                 ) : null}
@@ -1044,9 +1043,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
           <aside className="space-y-4">
             {!voted || (canManagePoll && !isOfficial) ? (
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.035]">
-              <h2 className="text-base font-bold text-slate-950 dark:text-white">{voted ? '내 투표 관리' : '친구의 선택도 궁금한가요?'}</h2>
-              {!voted ? <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">질문을 공유하고 서로의 결과를 비교해보세요.</p> : null}
+            <section className="rounded-3xl border border-line bg-surface p-5 dark:border-line dark:bg-surface">
+              <h2 className="text-base font-bold text-ink dark:text-ink">{voted ? '내 투표 관리' : '친구의 선택도 궁금한가요?'}</h2>
+              {!voted ? <p className="mt-2 text-sm leading-relaxed text-muted dark:text-muted">질문을 공유하고 서로의 결과를 비교해보세요.</p> : null}
               {!voted ? (
                 <button
                   type="button"
@@ -1054,7 +1053,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                   disabled={isSharing}
                   aria-label={`${pollData.title} 공유하기`}
                   aria-busy={isSharing}
-                  className="mt-4 min-h-11 w-full rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/15 transition hover:bg-blue-500 disabled:cursor-wait disabled:opacity-70"
+                  className="mt-4 min-h-11 w-full rounded-xl bg-primary px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-600/15 transition hover:bg-primary-hover disabled:cursor-wait disabled:opacity-70"
                 >
                   {isSharing ? '공유 준비 중...' : '공유하기'}
                 </button>
@@ -1062,7 +1061,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               {canManagePoll && !isOfficial ? (
                 <Link
                   href={`/vote/${encodeURIComponent(id)}/edit`}
-                  className="mt-3 flex min-h-11 w-full items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold text-slate-700 transition hover:border-blue-500 hover:bg-blue-50 hover:text-blue-700 dark:border-white/15 dark:text-slate-200 dark:hover:border-blue-400 dark:hover:bg-blue-500/10 dark:hover:text-blue-200"
+                  className="mt-3 flex min-h-11 w-full items-center justify-center rounded-xl border border-line px-5 py-3 text-sm font-bold text-ink transition hover:border-link hover:bg-primary-soft hover:text-blue-700 dark:border-line dark:text-ink dark:hover:border-blue-400 dark:hover:bg-primary-soft dark:hover:text-blue-200"
                 >
                   내 투표 관리
                 </Link>
@@ -1071,13 +1070,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
             ) : null}
 
             {pollData.officialFact ? (
-              <section className="rounded-3xl border border-cyan-500/20 bg-cyan-50/70 p-5 dark:bg-cyan-950/20">
+              <section className="rounded-3xl border border-line bg-surface-muted p-5 dark:bg-surface-muted">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-500/15 text-sm font-black text-cyan-700 dark:text-cyan-300">i</span>
-                  <h2 className="font-bold text-cyan-900 dark:text-cyan-100">관련 데이터</h2>
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-soft text-sm font-black text-link dark:text-link">i</span>
+                  <h2 className="font-bold text-ink">관련 데이터</h2>
                 </div>
-                <p className="mt-3 break-keep text-sm font-semibold leading-relaxed text-slate-600 dark:text-slate-300">{pollData.officialFact}</p>
-                <p className="mt-3 text-xs font-medium text-cyan-800/80 dark:text-cyan-300/80">판단을 돕는 참고 정보예요.</p>
+                <p className="mt-3 break-keep text-sm font-semibold leading-relaxed text-muted dark:text-muted">{pollData.officialFact}</p>
+                <p className="mt-3 text-xs font-medium text-muted">판단을 돕는 참고 정보예요.</p>
               </section>
             ) : null}
           </aside>
@@ -1087,9 +1086,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           <section className="min-w-0 max-w-3xl space-y-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="text-2xl font-bold text-slate-950 dark:text-white sm:text-3xl">사람들의 의견</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-400">결과만큼 궁금한 건, 사람들이 그렇게 고른 이유예요.</p>
-                <div aria-label="의견 활동" className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                <h2 className="text-2xl font-bold text-ink dark:text-ink sm:text-3xl">사람들의 의견</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted dark:text-muted">결과만큼 궁금한 건, 사람들이 그렇게 고른 이유예요.</p>
+                <div aria-label="의견 활동" className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-muted dark:text-muted">
                   <span>의견 {parentComments.length}개</span>
                   <span aria-hidden="true" className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
                   <span>답글 {replyCount}개</span>
@@ -1099,50 +1098,50 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               </div>
             </div>
 
-            <form onSubmit={handleCommentSubmit} className="border-y border-slate-200 py-5 dark:border-white/10">
-              <label htmlFor="comment-input" className="text-sm font-bold text-slate-800 dark:text-slate-100">왜 그렇게 골랐는지 알려주세요.</label>
-              <p id="comment-input-help" className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">다른 사람들과 선택한 이유를 나눠보세요.</p>
+            <form onSubmit={handleCommentSubmit} className="border-y border-line py-5 dark:border-line">
+              <label htmlFor="comment-input" className="text-sm font-bold text-ink dark:text-ink">왜 그렇게 골랐는지 알려주세요.</label>
+              <p id="comment-input-help" className="mt-1 text-xs leading-relaxed text-muted dark:text-muted">다른 사람들과 선택한 이유를 나눠보세요.</p>
               <textarea
                 id="comment-input"
                 aria-describedby="comment-input-help"
                 rows={3}
                 value={inputText}
                 onChange={(event) => setInputText(event.target.value)}
-                className="mt-3 w-full resize-none rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium leading-relaxed text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/5 dark:text-white"
+                className="mt-3 w-full resize-none rounded-xl border border-line bg-surface p-4 text-sm font-medium leading-relaxed text-ink outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted dark:text-ink"
                 placeholder="선택한 이유를 남겨주세요."
               />
               <div className="mt-3 flex justify-end">
-                <button type="submit" className="min-h-11 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-black text-white transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950">의견 남기기</button>
+                <button type="submit" className="min-h-11 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas">의견 남기기</button>
               </div>
             </form>
 
             {parentComments.length === 0 ? (
-              <div className="border-y border-dashed border-slate-300 py-10 text-center dark:border-white/10">
-                <p className="text-sm font-bold text-slate-700 dark:text-slate-200">아직 의견이 없어요.</p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">첫 번째 이유를 남겨볼까요?</p>
+              <div className="border-y border-dashed border-line py-10 text-center dark:border-line">
+                <p className="text-sm font-bold text-ink dark:text-ink">아직 의견이 없어요.</p>
+                <p className="mt-1 text-sm text-muted dark:text-muted">첫 번째 이유를 남겨볼까요?</p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-200 border-y border-slate-200 dark:divide-white/10 dark:border-white/10">
+              <div className="divide-y divide-slate-200 border-y border-line dark:divide-white/10 dark:border-line">
                 {parentComments.map((comment) => (
                   <article key={comment.id} className="py-6 first:pt-5 last:pb-5 sm:px-1">
                     {!comment.is_hidden ? <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-black text-blue-600 dark:text-blue-300">익명 사용자</span>
-                      <time className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{new Date(comment.created_at).toLocaleDateString('ko-KR')}</time>
+                      <span className="text-xs font-black text-link dark:text-link">익명 사용자</span>
+                      <time className="shrink-0 text-xs font-semibold text-muted dark:text-muted">{new Date(comment.created_at).toLocaleDateString('ko-KR')}</time>
                     </div> : null}
-                    <p className={`mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-[15px] font-medium leading-7 ${comment.is_hidden ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>{comment.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : comment.text}</p>
+                    <p className={`mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-[15px] font-medium leading-7 ${comment.is_hidden ? 'text-muted dark:text-muted' : 'text-ink dark:text-ink'}`}>{comment.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : comment.text}</p>
 
                     {!comment.is_hidden ? <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                      <button type="button" aria-pressed={comment.user_reaction === 'like'} onClick={() => handleReaction(String(comment.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${comment.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-600 hover:border-emerald-400 dark:border-white/10 dark:text-slate-400'}`}><span>좋아요</span><span>{comment.like_count}</span>{comment.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
-                      <button type="button" aria-pressed={comment.user_reaction === 'dislike'} onClick={() => handleReaction(String(comment.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${comment.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-600 hover:border-rose-400 dark:border-white/10 dark:text-slate-400'}`}><span>싫어요</span><span>{comment.dislike_count}</span>{comment.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
-                      <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id))} className="min-h-10 rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-600 transition hover:border-blue-400 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:text-slate-400 dark:focus-visible:ring-offset-slate-950">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
-                      <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(comment.id), label: '의견' })} aria-label="이 의견 신고하기" className="min-h-11 rounded-xl px-3 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">신고</button>
+                      <button type="button" aria-pressed={comment.user_reaction === 'like'} onClick={() => handleReaction(String(comment.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${comment.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-line text-muted hover:border-emerald-400 dark:border-line dark:text-muted'}`}><span>좋아요</span><span>{comment.like_count}</span>{comment.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
+                      <button type="button" aria-pressed={comment.user_reaction === 'dislike'} onClick={() => handleReaction(String(comment.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${comment.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-line text-muted hover:border-rose-400 dark:border-line dark:text-muted'}`}><span>싫어요</span><span>{comment.dislike_count}</span>{comment.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
+                      <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id))} className="min-h-10 rounded-xl border border-line px-3 py-1.5 font-bold text-muted transition hover:border-link hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:border-line dark:text-muted dark:focus-visible:ring-offset-canvas">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
+                      <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(comment.id), label: '의견' })} aria-label="이 의견 신고하기" className="min-h-11 rounded-xl px-3 text-muted hover:text-ink dark:text-muted dark:hover:text-ink">신고</button>
                     </div> : null}
 
                     {!comment.is_hidden && replyTargetId === String(comment.id) ? (
                       <div id={`reply-editor-${comment.id}`} className="mt-4 flex flex-col gap-2 border-l-2 border-blue-500/25 pl-3 sm:flex-row">
                         <label htmlFor={`reply-input-${comment.id}`} className="sr-only">답글 내용</label>
-                        <input id={`reply-input-${comment.id}`} value={replyText} onChange={(event) => setReplyText(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/5" placeholder="짧게 답글을 남겨보세요." />
-                        <button type="button" onClick={() => void handleReplySubmit(String(comment.id))} className="min-h-11 rounded-xl bg-blue-600 px-4 py-2 text-xs font-black text-white transition hover:bg-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950">답글 남기기</button>
+                        <input id={`reply-input-${comment.id}`} value={replyText} onChange={(event) => setReplyText(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted" placeholder="짧게 답글을 남겨보세요." />
+                        <button type="button" onClick={() => void handleReplySubmit(String(comment.id))} className="min-h-11 rounded-xl bg-primary px-4 py-2 text-xs font-black text-white transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas">답글 남기기</button>
                       </div>
                     ) : null}
 
@@ -1151,14 +1150,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                         {(repliesByParent.get(String(comment.id)) ?? []).map((reply) => (
                           <div key={reply.id} className="py-4 first:pt-1 last:pb-1">
                             {!reply.is_hidden ? <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-bold text-blue-600 dark:text-blue-300">답글 · 익명 사용자</span>
-                              <time className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{new Date(reply.created_at).toLocaleDateString('ko-KR')}</time>
+                              <span className="text-xs font-bold text-link dark:text-link">답글 · 익명 사용자</span>
+                              <time className="shrink-0 text-xs font-semibold text-muted dark:text-muted">{new Date(reply.created_at).toLocaleDateString('ko-KR')}</time>
                             </div> : null}
-                            <p className={`mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm font-medium leading-6 ${reply.is_hidden ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-300'}`}>{reply.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : reply.text}</p>
+                            <p className={`mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm font-medium leading-6 ${reply.is_hidden ? 'text-muted dark:text-muted' : 'text-ink dark:text-muted'}`}>{reply.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : reply.text}</p>
                             {!reply.is_hidden ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                              <button type="button" aria-pressed={reply.user_reaction === 'like'} onClick={() => handleReaction(String(reply.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${reply.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-500 hover:border-emerald-400 dark:border-white/10 dark:text-slate-400'}`}><span>좋아요</span><span>{reply.like_count}</span>{reply.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
-                              <button type="button" aria-pressed={reply.user_reaction === 'dislike'} onClick={() => handleReaction(String(reply.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${reply.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-500 hover:border-rose-400 dark:border-white/10 dark:text-slate-400'}`}><span>싫어요</span><span>{reply.dislike_count}</span>{reply.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
-                              <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(reply.id), label: '답글' })} aria-label="이 답글 신고하기" className="min-h-11 rounded-xl px-3 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">신고</button>
+                              <button type="button" aria-pressed={reply.user_reaction === 'like'} onClick={() => handleReaction(String(reply.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${reply.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-line text-muted hover:border-emerald-400 dark:border-line dark:text-muted'}`}><span>좋아요</span><span>{reply.like_count}</span>{reply.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
+                              <button type="button" aria-pressed={reply.user_reaction === 'dislike'} onClick={() => handleReaction(String(reply.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${reply.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-line text-muted hover:border-rose-400 dark:border-line dark:text-muted'}`}><span>싫어요</span><span>{reply.dislike_count}</span>{reply.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
+                              <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(reply.id), label: '답글' })} aria-label="이 답글 신고하기" className="min-h-11 rounded-xl px-3 text-muted hover:text-ink dark:text-muted dark:hover:text-ink">신고</button>
                             </div> : null}
                           </div>
                         ))}
@@ -1172,25 +1171,25 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
           <aside className="space-y-5 xl:sticky xl:top-24">
             <div>
-              <h2 className="text-xl font-bold text-slate-950 dark:text-white">이 투표도 해보세요</h2>
-              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">같은 관심사와 인기 투표를 모았어요.</p>
+              <h2 className="text-xl font-bold text-ink dark:text-ink">이 투표도 해보세요</h2>
+              <p className="mt-1 text-sm text-muted dark:text-muted">같은 관심사와 인기 투표를 모았어요.</p>
             </div>
             {remainingRelatedPolls.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-300 p-6 text-sm text-slate-500 dark:border-white/10">
-                다른 질문은 <Link href="/" className="font-black text-blue-600 dark:text-blue-300">홈에서 둘러보세요.</Link>
+              <div className="rounded-3xl border border-dashed border-line p-6 text-sm text-muted dark:border-line">
+                다른 질문은 <Link href="/" className="font-black text-link dark:text-link">홈에서 둘러보세요.</Link>
               </div>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
                 {remainingRelatedPolls.map((poll) => (
-                  <Link key={poll.id} href={`/vote/${poll.id}`} className="group rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-blue-500 hover:shadow-lg hover:shadow-blue-950/5 dark:border-white/10 dark:bg-white/[0.035]">
+                  <Link key={poll.id} href={`/vote/${poll.id}`} className="group rounded-2xl border border-line bg-surface p-5 transition hover:border-link hover:shadow-lg hover:shadow-blue-950/5 dark:border-line dark:bg-surface">
                     <div className="flex items-center justify-between gap-2 text-xs font-bold">
-                      <span className="text-blue-600 dark:text-blue-300">{poll.category || '커뮤니티'}</span>
-                      {poll.category === pollData.category ? <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-blue-600 dark:text-blue-300">같은 카테고리</span> : null}
+                      <span className="text-link dark:text-link">{poll.category || '커뮤니티'}</span>
+                      {poll.category === pollData.category ? <span className="rounded-full bg-primary-soft px-2 py-0.5 text-link dark:text-link">같은 카테고리</span> : null}
                     </div>
-                    <h3 className="mt-3 break-words font-bold leading-snug text-slate-900 dark:text-white">{poll.title}</h3>
-                    <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs dark:border-white/10">
-                      <span className="font-bold text-slate-500">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
-                      <span className="font-black text-blue-600 transition-transform group-hover:translate-x-1 dark:text-blue-300">투표하기 →</span>
+                    <h3 className="mt-3 break-words font-bold leading-snug text-ink dark:text-ink">{poll.title}</h3>
+                    <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs dark:border-line">
+                      <span className="font-bold text-muted">참여자 {(poll.participants ?? 0).toLocaleString()}명</span>
+                      <span className="font-black text-link transition-transform group-hover:translate-x-1 dark:text-link">투표하기 →</span>
                     </div>
                   </Link>
                 ))}

@@ -19,7 +19,7 @@ export function ThemeToggle() {
         type="button"
         disabled
         aria-label="테마 불러오는 중"
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-500 shadow-sm dark:border-white/20 dark:bg-[#020617] dark:text-slate-300"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-muted shadow-sm dark:border-line dark:bg-canvas dark:text-muted"
       >
         <span aria-hidden="true" className="size-5 rounded-full border-2 border-current" />
       </button>
@@ -34,7 +34,7 @@ export function ThemeToggle() {
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       aria-label={isDark ? '라이트 모드로 전환' : '다크 모드로 전환'}
       title={isDark ? '라이트 모드' : '다크 모드'}
-      className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-100 dark:border-white/20 dark:bg-[#020617] dark:text-slate-100 dark:hover:bg-[#0b1225]"
+      className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-ink shadow-sm transition-colors hover:bg-surface-muted dark:border-line dark:bg-canvas dark:text-ink dark:hover:bg-surface-muted"
     >
       {isDark ? (
         <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8">

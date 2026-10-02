@@ -1,10 +1,52 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Semantic UI colors, independent of the temporary brand name. */
+:root {
+  --ui-canvas: #faf8f3;
+  --ui-surface: #ffffff;
+  --ui-surface-muted: #f2eee7;
+  --ui-hero: #f5f1e9;
+  --ui-ink: #182638;
+  --ui-muted: #526075;
+  --ui-line: #dedbd4;
+  --ui-link: #2855d9;
+  --ui-primary-soft: #edf1fb;
+  --ui-accent: #d76448;
+}
+
+html.dark {
+  --ui-canvas: #0f1826;
+  --ui-surface: #182437;
+  --ui-surface-muted: #202e42;
+  --ui-hero: #19263a;
+  --ui-ink: #eef1f5;
+  --ui-muted: #b0bdcd;
+  --ui-line: #354258;
+  --ui-link: #aec3ff;
+  --ui-primary-soft: #233450;
+  --ui-accent: #ec987d;
+}
+
+@theme inline {
+  --color-canvas: var(--ui-canvas);
+  --color-surface: var(--ui-surface);
+  --color-surface-muted: var(--ui-surface-muted);
+  --color-hero: var(--ui-hero);
+  --color-ink: var(--ui-ink);
+  --color-muted: var(--ui-muted);
+  --color-line: var(--ui-line);
+  --color-link: var(--ui-link);
+  --color-primary-soft: var(--ui-primary-soft);
+  --color-accent: var(--ui-accent);
+  --color-primary: #2855d9;
+  --color-primary-hover: #2348bb;
+}
+
 body {
   font-family: var(--font-geist-sans), "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
-  background-color: #f8fafc;
-  color: #0f172a;
+  background-color: var(--ui-canvas);
+  color: var(--ui-ink);
   margin: 0;
   padding: 0;
   transition: background-color 180ms ease, color 180ms ease;
@@ -19,7 +61,7 @@ html.light {
 }
 
 :where(a, button, input, textarea, select, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--ui-link);
   outline-offset: 2px;
 }
 
