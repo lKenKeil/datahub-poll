@@ -4,6 +4,8 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { ContentReportDialog, type ContentReportTarget } from '@/components/content-report-dialog';
+import { HIDDEN_COMMENT_PLACEHOLDER } from '@/lib/content-reporting';
 import { POLLS } from '../../../data/polls';
 import { CommentRow, DbPoll } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
@@ -52,6 +54,7 @@ type CommentView = CommentRow & {
   like_count: number;
   dislike_count: number;
   user_reaction: 'like' | 'dislike' | null;
+  is_hidden?: boolean;
 };
 
 type ShareFeedback = {
@@ -152,6 +155,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [shareFeedback, setShareFeedback] = useState<ShareFeedback | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [pollData, setPollData] = useState<ViewPoll | null>(null);
+  const [pollLoadError, setPollLoadError] = useState('');
+  const [reportable, setReportable] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ContentReportTarget | null>(null);
   const [recommendationPool, setRecommendationPool] = useState<DbPoll[]>([]);
   const [isOfficial, setIsOfficial] = useState(false);
   const [canManagePoll, setCanManagePoll] = useState(false);
@@ -161,6 +167,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [syncState, setSyncState] = useState<'live' | 'syncing' | 'reconnecting'>('live');
   const [resultViewSource, setResultViewSource] = useState<VoteResultSource | null>(null);
   const lastSnapshotRef = useRef('');
+  const pollRequestGenerationRef = useRef(0);
+  const recommendationRequestGenerationRef = useRef(0);
   const trackedPollViewRef = useRef<string | null>(null);
   const trackedResultViewRef = useRef<string | null>(null);
   const silentRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -173,9 +181,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   }, []);
 
   useEffect(() => {
+    pollRequestGenerationRef.current += 1;
     trackedPollViewRef.current = null;
     trackedResultViewRef.current = null;
     setResultViewSource(null);
+    return () => { pollRequestGenerationRef.current += 1; };
   }, [dbPollId]);
 
   useEffect(() => {
@@ -202,24 +212,34 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     const controller = new AbortController();
 
     const fetchRecommendationPool = async () => {
+      const generation = ++recommendationRequestGenerationRef.current;
       try {
         const response = await fetch('/api/polls', {
           cache: 'no-store',
           signal: controller.signal,
         });
         const json = (await response.json()) as { data?: DbPoll[] };
-        if (response.ok) setRecommendationPool(json.data ?? []);
+        if (generation !== recommendationRequestGenerationRef.current) return;
+        setRecommendationPool(response.ok ? json.data ?? [] : []);
       } catch (error) {
+        if (generation !== recommendationRequestGenerationRef.current) return;
         if (error instanceof Error && error.name === 'AbortError') return;
+        setRecommendationPool([]);
       }
     };
 
     void fetchRecommendationPool();
-    return () => controller.abort();
+    const interval = setInterval(() => { void fetchRecommendationPool(); }, 20000);
+    return () => {
+      recommendationRequestGenerationRef.current += 1;
+      clearInterval(interval);
+      controller.abort();
+    };
   }, []);
 
   const fetchAllData = useCallback(async (options?: { silent?: boolean }) => {
     if (!voterId) return;
+    const generation = ++pollRequestGenerationRef.current;
 
     const silent = options?.silent ?? false;
     if (!silent) setLoading(true);
@@ -237,12 +257,33 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         poll?: DbPoll | null;
         comments?: CommentView[];
         viewerVote?: { optionIndex: number } | null;
+        reportable?: boolean;
         error?: string;
       };
+      if (generation !== pollRequestGenerationRef.current) return;
 
-      if (!response.ok) throw new Error(json.error ?? '투표 데이터 로딩 실패');
+      if (!response.ok) {
+        setPollLoadError(response.status === 404
+          ? '현재 이 질문을 볼 수 없어요.'
+          : '질문을 불러오지 못했어요. 잠시 후 다시 확인해주세요.');
+        setPollData(null);
+        setComments([]);
+        setReportable(false);
+        setReportTarget(null);
+        setVoted(false);
+        setIsRevoting(false);
+        setChoice(null);
+        setSelectedOptionIndex(null);
+        setResultViewSource(null);
+        setReplyTargetId(null);
+        setBarWidths([]);
+        lastSnapshotRef.current = '';
+        return;
+      }
+      setPollLoadError('');
 
       const dbPoll = json.poll as DbPollWithOfficialFact | null;
+      setReportable(Boolean(dbPoll) && json.reportable !== false);
       const dbComments = (json.comments ?? []).map((comment) => ({
         ...comment,
         parent_id: comment.parent_id ?? null,
@@ -268,6 +309,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           user_reaction: comment.user_reaction,
           text: comment.text,
           created_at: comment.created_at,
+          is_hidden: comment.is_hidden ?? false,
         })),
       });
 
@@ -318,7 +360,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         setBarWidths(calcPercentages(safeVotes));
         analyticsCategory = dbPoll.category || '커뮤니티';
         analyticsParticipants = dbPoll.participants || 0;
-      } else if (!silent) {
+      } else {
         setPollData(null);
       }
 
@@ -357,32 +399,24 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       }
 
       setComments(dbComments);
+      setReplyTargetId((current) => dbComments.some((comment) => String(comment.id) === current && !comment.is_hidden)
+        ? current
+        : null);
       setSyncState('live');
     } catch (error) {
+      if (generation !== pollRequestGenerationRef.current) return;
       console.error('투표 페이지 로딩 실패:', getErrorMessage(error));
       if (silent) setSyncState('reconnecting');
-      if (officialPoll) {
-        const fallbackVotes = statsToVotes(officialPoll.stats, officialPoll.participants);
-        setIsOfficial(true);
-        setPollData({
-          id: dbPollId,
-          title: officialPoll.title,
-          category: officialPoll.category,
-          options: officialPoll.options,
-          votes: fallbackVotes,
-          participants: officialPoll.participants,
-          officialFact: officialPoll.officialFact,
-          optionImagePaths: null,
-        });
-        setBarWidths(calcPercentages(fallbackVotes));
-      } else if (!silent) {
-        setPollData(null);
-      }
-      if (!silent) {
-        setComments([]);
-      }
+      // A network/server failure cannot prove that static official content is
+      // public. Only an explicit successful response may enable its fallback.
+      setPollData(null);
+      setComments([]);
+      setReportable(false);
+      setReportTarget(null);
+      lastSnapshotRef.current = '';
+      setPollLoadError('질문을 불러오지 못했어요. 잠시 후 다시 확인해주세요.');
     } finally {
-      if (!silent) setLoading(false);
+      if (generation === pollRequestGenerationRef.current) setLoading(false);
     }
   }, [dbPollId, id, officialPoll, userFingerprint, voterId]);
 
@@ -422,6 +456,16 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         { event: '*', schema: 'public', table: 'polls', filter: `id=eq.${dbPollId}` },
         (payload) => {
           const row = payload.new as DbPoll;
+          if (payload.eventType === 'DELETE' || (row as DbPoll & { is_hidden?: boolean }).is_hidden) {
+            pollRequestGenerationRef.current += 1;
+            setPollData(null);
+            setComments([]);
+            setReportable(false);
+            setReportTarget(null);
+            setPollLoadError('현재 이 질문을 볼 수 없어요.');
+            scheduleSilentRefresh();
+            return;
+          }
           if (!row?.votes) return;
           setPollData((prev) => (prev ? { ...prev, votes: row.votes, participants: row.participants ?? prev.participants } : prev));
           setBarWidths(calcPercentages(row.votes));
@@ -493,7 +537,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   }
 
   if (!pollData) {
-    return <div className="min-h-screen bg-slate-50 dark:bg-[#020617] flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-lg">투표를 찾을 수 없어요.</div>;
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-50 px-4 text-center dark:bg-[#020617]">
+        <h1 className="text-xl font-bold text-slate-700 dark:text-slate-200">{pollLoadError || '질문을 찾을 수 없어요.'}</h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400">삭제되었거나 운영 정책에 따라 숨겨진 질문일 수 있습니다.</p>
+        <Link href="/" className="inline-flex min-h-11 items-center rounded-xl bg-blue-600 px-4 text-sm font-bold text-white">다른 질문 둘러보기</Link>
+      </main>
+    );
   }
 
   const selectedPercentage = selectedOptionIndex === null ? 0 : (barWidths[selectedOptionIndex] ?? 0);
@@ -601,7 +651,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       });
       setResultViewSource('new_vote');
     } catch (error) {
-      setPollData(previousPoll);
+      if (error instanceof ApiResponseError && error.status === 404) {
+        await fetchAllData({ silent: true });
+        return;
+      }
+      setPollData((current) => current?.id === previousPoll.id ? previousPoll : current);
       setVoted(false);
       setChoice(null);
       setSelectedOptionIndex(null);
@@ -657,7 +711,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         vote_action: 'change',
       });
     } catch (error) {
-      setPollData(previousPoll);
+      if (error instanceof ApiResponseError && error.status === 404) {
+        await fetchAllData({ silent: true });
+        return;
+      }
+      setPollData((current) => current?.id === previousPoll.id ? previousPoll : current);
       setChoice(previousChoice);
       setSelectedOptionIndex(previousOptionIndex);
       setIsRevoting(true);
@@ -691,6 +749,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setComments((prev) => [{ ...json.data!, parent_id: null, like_count: 0, dislike_count: 0, user_reaction: null }, ...prev]);
       setInputText('');
     } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 404) {
+        await fetchAllData({ silent: true });
+        setActionError('현재 이 질문에 의견을 남길 수 없어요.');
+        return;
+      }
       if (error instanceof ApiResponseError && error.status === 429) {
         setActionError(error.message);
       } else {
@@ -723,6 +786,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setReplyText('');
       setReplyTargetId(null);
     } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 404) {
+        await fetchAllData({ silent: true });
+        setActionError('현재 이 의견에 답글을 남길 수 없어요.');
+        return;
+      }
       if (error instanceof ApiResponseError && error.status === 429) {
         setActionError(error.message);
       } else {
@@ -760,6 +828,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         ),
       );
     } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 404) {
+        await fetchAllData({ silent: true });
+        setActionError('현재 이 의견에 반응할 수 없어요.');
+        return;
+      }
       if (error instanceof ApiResponseError && error.status === 429) {
         setActionError(error.message);
       } else {
@@ -809,6 +882,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               <span className={syncState === 'reconnecting' ? 'text-rose-500' : syncState === 'syncing' ? 'text-amber-500' : 'text-emerald-600 dark:text-emerald-300'}>
                 {syncState === 'live' ? '실시간 반영 중' : syncState === 'syncing' ? '결과 동기화 중' : '재연결 중'}
               </span>
+              {reportable ? <button type="button" onClick={() => setReportTarget({ type: 'poll', id: dbPollId, label: '질문' })} className="inline-flex min-h-11 items-center rounded-xl px-2 text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white" aria-label="이 질문 신고하기">신고</button> : null}
             </div>
           </div>
         </header>
@@ -1054,19 +1128,20 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               <div className="divide-y divide-slate-200 border-y border-slate-200 dark:divide-white/10 dark:border-white/10">
                 {parentComments.map((comment) => (
                   <article key={comment.id} className="py-6 first:pt-5 last:pb-5 sm:px-1">
-                    <div className="flex items-center justify-between gap-3">
+                    {!comment.is_hidden ? <div className="flex items-center justify-between gap-3">
                       <span className="text-xs font-black text-blue-600 dark:text-blue-300">익명 사용자</span>
                       <time className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{new Date(comment.created_at).toLocaleDateString('ko-KR')}</time>
-                    </div>
-                    <p className="mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-[15px] font-medium leading-7 text-slate-800 dark:text-slate-200">{comment.text}</p>
+                    </div> : null}
+                    <p className={`mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-[15px] font-medium leading-7 ${comment.is_hidden ? 'text-slate-500 dark:text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>{comment.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : comment.text}</p>
 
-                    <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+                    {!comment.is_hidden ? <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                       <button type="button" aria-pressed={comment.user_reaction === 'like'} onClick={() => handleReaction(String(comment.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${comment.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-600 hover:border-emerald-400 dark:border-white/10 dark:text-slate-400'}`}><span>좋아요</span><span>{comment.like_count}</span>{comment.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
                       <button type="button" aria-pressed={comment.user_reaction === 'dislike'} onClick={() => handleReaction(String(comment.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${comment.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-600 hover:border-rose-400 dark:border-white/10 dark:text-slate-400'}`}><span>싫어요</span><span>{comment.dislike_count}</span>{comment.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
                       <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id))} className="min-h-10 rounded-xl border border-slate-200 px-3 py-1.5 font-bold text-slate-600 transition hover:border-blue-400 hover:text-blue-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-white/10 dark:text-slate-400 dark:focus-visible:ring-offset-slate-950">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
-                    </div>
+                      <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(comment.id), label: '의견' })} aria-label="이 의견 신고하기" className="min-h-11 rounded-xl px-3 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">신고</button>
+                    </div> : null}
 
-                    {replyTargetId === String(comment.id) ? (
+                    {!comment.is_hidden && replyTargetId === String(comment.id) ? (
                       <div id={`reply-editor-${comment.id}`} className="mt-4 flex flex-col gap-2 border-l-2 border-blue-500/25 pl-3 sm:flex-row">
                         <label htmlFor={`reply-input-${comment.id}`} className="sr-only">답글 내용</label>
                         <input id={`reply-input-${comment.id}`} value={replyText} onChange={(event) => setReplyText(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 dark:border-white/10 dark:bg-white/5" placeholder="짧게 답글을 남겨보세요." />
@@ -1078,15 +1153,16 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                       <div className="mt-5 divide-y divide-slate-200 border-l-2 border-blue-500/20 pl-3 dark:divide-white/10 sm:pl-5">
                         {(repliesByParent.get(String(comment.id)) ?? []).map((reply) => (
                           <div key={reply.id} className="py-4 first:pt-1 last:pb-1">
-                            <div className="flex items-center justify-between gap-3">
+                            {!reply.is_hidden ? <div className="flex items-center justify-between gap-3">
                               <span className="text-xs font-bold text-blue-600 dark:text-blue-300">답글 · 익명 사용자</span>
                               <time className="shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">{new Date(reply.created_at).toLocaleDateString('ko-KR')}</time>
-                            </div>
-                            <p className="mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm font-medium leading-6 text-slate-700 dark:text-slate-300">{reply.text}</p>
-                            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                            </div> : null}
+                            <p className={`mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm font-medium leading-6 ${reply.is_hidden ? 'text-slate-500 dark:text-slate-400' : 'text-slate-700 dark:text-slate-300'}`}>{reply.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : reply.text}</p>
+                            {!reply.is_hidden ? <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                               <button type="button" aria-pressed={reply.user_reaction === 'like'} onClick={() => handleReaction(String(reply.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${reply.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-slate-200 text-slate-500 hover:border-emerald-400 dark:border-white/10 dark:text-slate-400'}`}><span>좋아요</span><span>{reply.like_count}</span>{reply.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
                               <button type="button" aria-pressed={reply.user_reaction === 'dislike'} onClick={() => handleReaction(String(reply.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950 ${reply.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-slate-200 text-slate-500 hover:border-rose-400 dark:border-white/10 dark:text-slate-400'}`}><span>싫어요</span><span>{reply.dislike_count}</span>{reply.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
-                            </div>
+                              <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(reply.id), label: '답글' })} aria-label="이 답글 신고하기" className="min-h-11 rounded-xl px-3 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">신고</button>
+                            </div> : null}
                           </div>
                         ))}
                       </div>
@@ -1126,6 +1202,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           </aside>
         </div>
       </div>
+
+      <ContentReportDialog target={reportTarget} onClose={() => setReportTarget(null)} />
 
       {shareFeedback ? (
         <div

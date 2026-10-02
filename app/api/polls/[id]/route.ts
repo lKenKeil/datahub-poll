@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { POLLS } from "@/data/polls";
+import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/content-report-server";
 import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server";
 import { isValidVoterId } from "@/lib/voter-id";
 import type { PollCategory } from "@/lib/types";
@@ -44,6 +46,9 @@ const validCategories = new Set<PollCategory>([
 const OWNER_FORBIDDEN_MESSAGE = "투표 관리 권한을 확인할 수 없습니다.";
 const OWNER_MUTATION_MIGRATION_MESSAGE =
   "투표 수정·삭제 설정이 아직 적용되지 않았습니다. 관리자에게 문의해주세요.";
+const STRUCTURAL_LOCK_REASONS = new Set([
+  "first_vote", "time_expired", "participant_limit", "has_comments",
+]);
 
 type MutablePollRow = {
   id: string;
@@ -52,6 +57,7 @@ type MutablePollRow = {
   options: string[];
   votes: number[];
   participants: number | null;
+  is_hidden: boolean;
   official_fact: string | null;
   option_image_paths: unknown;
   created_at?: string;
@@ -143,131 +149,139 @@ function validateRetainedImagePaths(
   return result;
 }
 
-export async function GET(_: Request, context: Context) {
-  const { id } = await context.params;
-  const userFingerprint = _.headers.get("x-user-fp")?.trim() ?? "";
-  const voterId = _.headers.get("x-voter-id")?.trim().toLowerCase() ?? "";
+export async function GET(request: Request, context: Context) {
+  const headers = { "Cache-Control": "no-store" };
+  const unavailable = () => NextResponse.json(
+    { error: "질문을 찾을 수 없습니다.", unavailable: true },
+    { status: 404, headers },
+  );
 
-  if (voterId && !isValidVoterId(voterId)) {
-    return NextResponse.json({ error: "invalid voter id." }, { status: 400 });
-  }
+  try {
+    const { id } = await context.params;
+    if (!validatePollId(id)) {
+      return NextResponse.json({ error: "invalid poll id." }, { status: 400, headers });
+    }
+    const userFingerprint = request.headers.get("x-user-fp")?.trim() ?? "";
+    const voterId = request.headers.get("x-voter-id")?.trim().toLowerCase() ?? "";
+    if (voterId && !isValidVoterId(voterId)) {
+      return NextResponse.json({ error: "invalid voter id." }, { status: 400, headers });
+    }
 
-  const [{ data: poll, error: pollError }, { data: comments, error: commentsError }] = await Promise.all([
-    supabaseServer.from("polls").select("*").eq("id", id).maybeSingle(),
-    supabaseServer
-      .from("comments")
-      .select("*")
-      .eq("poll_id", id)
-      .order("created_at", { ascending: false }),
-  ]);
-
-  if (pollError) {
-    return NextResponse.json({ error: pollError.message }, { status: 500 });
-  }
-
-  if (commentsError) {
-    return NextResponse.json({ error: commentsError.message }, { status: 500 });
-  }
-
-  let viewerVote: { optionIndex: number } | null = null;
-  let hasAnyVotes = Boolean(poll && Number(poll.participants) > 0);
-  if (voterId) {
     const supabaseMutation = getSupabaseMutationClient();
-    const { data: vote, error: voteError } = await supabaseMutation
-      .from("poll_votes")
-      .select("option_index")
-      .eq("poll_id", id)
-      .eq("voter_id", voterId)
+    if (id.startsWith("official_")) {
+      const { data: deletedOfficial, error: deletedOfficialError } = await supabaseMutation
+        .from("deleted_official_polls").select("poll_id").eq("poll_id", id).maybeSingle();
+      if (deletedOfficialError) throw deletedOfficialError;
+      if (deletedOfficial) return unavailable();
+    }
+    const { data: availability, error: availabilityError } = await supabaseMutation
+      .from("polls")
+      .select("id,is_hidden")
+      .eq("id", id)
       .maybeSingle();
-
-    if (voteError) {
-      return NextResponse.json({ error: voteError.message }, { status: 500 });
+    if (availabilityError) throw availabilityError;
+    if (availability?.is_hidden) return unavailable();
+    if (!availability) {
+      const isStaticOfficial = id.startsWith("official_")
+        && POLLS.some((poll) => `official_${poll.id}` === id);
+      if (!isStaticOfficial) return unavailable();
+      // A genuinely DB-less static question remains readable, but cannot be
+      // reported or mutated as though it were a persisted poll.
+      return NextResponse.json(
+        { poll: null, comments: [], viewerVote: null, reportable: false },
+        { headers },
+      );
     }
 
-    if (vote && Number.isInteger(vote.option_index)) {
-      viewerVote = { optionIndex: vote.option_index };
+    const [{ data: poll, error: pollError }, { data: comments, error: commentsError }] = await Promise.all([
+      supabaseServer.from("polls").select("*").eq("id", id).eq("is_hidden", false).maybeSingle(),
+      supabaseServer.from("comments").select("*").eq("poll_id", id)
+        .eq("is_hidden", false).order("created_at", { ascending: false }),
+    ]);
+    if (pollError) throw pollError;
+    if (commentsError) throw commentsError;
+    if (!poll) return unavailable();
+
+    let viewerVote: { optionIndex: number } | null = null;
+    let hasAnyVotes = Number(poll.participants) > 0;
+    if (voterId) {
+      const { data: vote, error: voteError } = await supabaseMutation
+        .from("poll_votes").select("option_index").eq("poll_id", id)
+        .eq("voter_id", voterId).maybeSingle();
+      if (voteError) throw voteError;
+      if (vote && Number.isInteger(vote.option_index)) {
+        viewerVote = { optionIndex: vote.option_index };
+      }
     }
-  }
-
-  if (
-    poll
-    && !hasAnyVotes
-    && (!poll.edit_lock_mode || poll.edit_lock_mode === "first_vote")
-  ) {
-    const supabaseMutation = getSupabaseMutationClient();
-    const { data: existingVote, error: existingVoteError } = await supabaseMutation
-      .from("poll_votes")
-      .select("id")
-      .eq("poll_id", id)
-      .limit(1)
-      .maybeSingle();
-
-    if (existingVoteError) {
-      logPublicMutationError("poll-detail-edit-state", existingVoteError);
-      return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
+    if (!hasAnyVotes && (!poll.edit_lock_mode || poll.edit_lock_mode === "first_vote")) {
+      const { data: existingVote, error: existingVoteError } = await supabaseMutation
+        .from("poll_votes").select("id").eq("poll_id", id).limit(1).maybeSingle();
+      if (existingVoteError) throw existingVoteError;
+      hasAnyVotes = Boolean(existingVote);
     }
-    hasAnyVotes = Boolean(existingVote);
-  }
 
-  const commentRows = (comments ?? []) as Array<Record<string, unknown>>;
-  const commentIds = commentRows.map((row) => String(row.id));
-  const pollWithEditState = poll
-    ? {
-      ...poll,
-      ...getPollStructuralEditState(poll, commentRows.length > 0, hasAnyVotes),
+    const visibleComments = (comments ?? []) as Array<Record<string, unknown>>;
+    const visibleIds = visibleComments.map((comment) => String(comment.id));
+    const byComment = new Map<string, { like: number; dislike: number; userReaction: "like" | "dislike" | null }>();
+    if (visibleIds.length > 0) {
+      const { data: reactions, error: reactionsError } = await supabaseServer
+        .from("comment_reactions").select("comment_id,reaction,user_fingerprint")
+        .in("comment_id", visibleIds);
+      if (reactionsError) throw reactionsError;
+      for (const row of reactions ?? []) {
+        const key = String(row.comment_id);
+        const bucket = byComment.get(key) ?? { like: 0, dislike: 0, userReaction: null };
+        if (row.reaction === "like") bucket.like += 1;
+        if (row.reaction === "dislike") bucket.dislike += 1;
+        if (userFingerprint && row.user_fingerprint === userFingerprint
+          && (row.reaction === "like" || row.reaction === "dislike")) {
+          bucket.userReaction = row.reaction;
+        }
+        byComment.set(key, bucket);
+      }
     }
-    : null;
 
-  if (commentIds.length === 0) {
-    return NextResponse.json({ poll: pollWithEditState, comments: [], viewerVote });
+    // Recheck availability after the public reads. Privileged comment reads
+    // contain only identifiers and visibility, never hidden original content.
+    const [{ data: currentPoll, error: currentPollError }, { data: commentStates, error: commentStatesError }] = await Promise.all([
+      supabaseMutation.from("polls").select("id,is_hidden").eq("id", id).maybeSingle(),
+      supabaseMutation.from("comments").select("id,poll_id,parent_id,is_hidden")
+        .eq("poll_id", id).order("created_at", { ascending: false }),
+    ]);
+    if (currentPollError) throw currentPollError;
+    if (commentStatesError) throw commentStatesError;
+    if (!currentPoll || currentPoll.is_hidden) return unavailable();
+
+    const visibleById = new Map(visibleComments.map((comment) => [String(comment.id), comment]));
+    const enriched = (commentStates ?? []).flatMap<Record<string, unknown>>((state) => {
+      if (state.is_hidden) {
+        return [{
+          id: String(state.id), poll_id: id, parent_id: state.parent_id ?? null,
+          text: "운영 정책에 따라 숨겨진 의견입니다.", is_hidden: true,
+          user_name: "", created_at: "", like_count: 0, dislike_count: 0, user_reaction: null,
+        }];
+      }
+      const original = visibleById.get(String(state.id));
+      if (!original) return [];
+      const counts = byComment.get(String(state.id));
+      return [{
+        ...original, parent_id: state.parent_id ?? null, is_hidden: false,
+        like_count: counts?.like ?? 0, dislike_count: counts?.dislike ?? 0,
+        user_reaction: counts?.userReaction ?? null,
+      }];
+    });
+    return NextResponse.json({
+      poll: {
+        ...poll,
+        ...getPollStructuralEditState(poll, (commentStates ?? []).length > 0, hasAnyVotes),
+      },
+      comments: enriched, viewerVote, reportable: true,
+    }, { headers });
+  } catch (error) {
+    if (isModerationMigrationMissing(error)) return moderationErrorResponse(error, "poll-detail-read");
+    logPublicMutationError("poll-detail-read", error);
+    return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500, headers });
   }
-
-  const { data: reactions, error: reactionsError } = await supabaseServer
-    .from("comment_reactions")
-    .select("comment_id,reaction,user_fingerprint")
-    .in("comment_id", commentIds);
-
-  if (reactionsError) {
-    return NextResponse.json({ error: reactionsError.message }, { status: 500 });
-  }
-
-  const reactionRows = (reactions ?? []) as Array<{
-    comment_id: string;
-    reaction: "like" | "dislike";
-    user_fingerprint: string;
-  }>;
-
-  const byComment = new Map<string, { like: number; dislike: number; userReaction: "like" | "dislike" | null }>();
-
-  for (const commentId of commentIds) {
-    byComment.set(commentId, { like: 0, dislike: 0, userReaction: null });
-  }
-
-  for (const row of reactionRows) {
-    const bucket = byComment.get(row.comment_id);
-    if (!bucket) continue;
-
-    if (row.reaction === "like") bucket.like += 1;
-    if (row.reaction === "dislike") bucket.dislike += 1;
-
-    if (userFingerprint && row.user_fingerprint === userFingerprint) {
-      bucket.userReaction = row.reaction;
-    }
-  }
-
-  const enriched = commentRows.map((row) => {
-    const key = String(row.id);
-    const meta = byComment.get(key) ?? { like: 0, dislike: 0, userReaction: null };
-    return {
-      ...row,
-      parent_id: (row.parent_id as string | null | undefined) ?? null,
-      like_count: meta.like,
-      dislike_count: meta.dislike,
-      user_reaction: meta.userReaction,
-    };
-  });
-
-  return NextResponse.json({ poll: pollWithEditState, comments: enriched, viewerVote });
 }
 
 export async function PATCH(request: Request, context: Context) {
@@ -298,11 +312,12 @@ export async function PATCH(request: Request, context: Context) {
 
     const { data: currentData, error: currentError } = await supabaseMutation
       .from("polls")
-      .select("id,title,category,options,votes,participants,official_fact,option_image_paths,created_at,edit_lock_mode,edit_lock_minutes,edit_lock_participants")
+      .select("id,title,category,options,votes,participants,is_hidden,official_fact,option_image_paths,created_at,edit_lock_mode,edit_lock_minutes,edit_lock_participants")
       .eq("id", id)
       .maybeSingle();
 
     if (currentError) {
+      if (isModerationMigrationMissing(currentError)) return moderationErrorResponse(currentError, "poll-owner-update-read");
       if (isOwnerMutationMigrationMissing(currentError)) {
         return NextResponse.json(
           { code: "POLL_OWNER_MUTATION_MIGRATION_REQUIRED", error: OWNER_MUTATION_MIGRATION_MESSAGE },
@@ -312,7 +327,7 @@ export async function PATCH(request: Request, context: Context) {
       logPublicMutationError("poll-owner-update-read", currentError);
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
-    if (!currentData) {
+    if (!currentData || currentData.is_hidden) {
       return NextResponse.json({ error: "poll not found." }, { status: 404 });
     }
 
@@ -480,6 +495,7 @@ export async function PATCH(request: Request, context: Context) {
       const errorRecord = updateError as { code?: string; message?: string; details?: string };
       if (errorRecord.message === "POLL_STRUCTURE_LOCKED") {
         const lockReason = typeof errorRecord.details === "string"
+          && STRUCTURAL_LOCK_REASONS.has(errorRecord.details)
           ? errorRecord.details
           : undefined;
         return NextResponse.json(

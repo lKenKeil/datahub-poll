@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { POLLS } from '@/data/polls';
 import { BRAND } from '@/lib/brand';
-import { supabaseServer } from '@/lib/supabase-server';
+import { getSupabaseMutationClient, supabaseServer } from '@/lib/supabase-server';
 
 type VoteLayoutProps = {
   children: ReactNode;
@@ -29,13 +29,30 @@ function truncateText(value: string, maxLength: number) {
 
 async function getPollMetadata(id: string): Promise<PollMetadata | null> {
   const officialPoll = POLLS.find((poll) => poll.id === id);
-  if (officialPoll) return { title: officialPoll.title };
+  const dbPollId = officialPoll ? `official_${id}` : id;
 
   try {
+    const supabaseMutation = getSupabaseMutationClient();
+    if (dbPollId.startsWith('official_')) {
+      const { data: deletedOfficial, error: deletedOfficialError } = await supabaseMutation
+        .from('deleted_official_polls').select('poll_id').eq('poll_id', dbPollId).maybeSingle();
+      if (deletedOfficialError || deletedOfficial) return null;
+    }
+    // An unavailable DB-backed official question must never reappear through
+    // its static title. The privileged projection contains no original text.
+    const { data: availability, error: availabilityError } = await supabaseMutation
+      .from('polls')
+      .select('id,is_hidden')
+      .eq('id', dbPollId)
+      .maybeSingle();
+    if (availabilityError || availability?.is_hidden) return null;
+    if (!availability) return officialPoll ? { title: officialPoll.title } : null;
+
     const { data, error } = await supabaseServer
       .from('polls')
       .select('title')
-      .eq('id', id)
+      .eq('id', dbPollId)
+      .eq('is_hidden', false)
       .maybeSingle();
 
     if (error || typeof data?.title !== 'string' || !data.title.trim()) return null;

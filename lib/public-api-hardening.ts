@@ -37,8 +37,7 @@ export function logPublicMutationError(scope: string, error: unknown) {
   console.error(`[public mutation:${scope}]`, {
     name: toLogValue(errorRecord?.name),
     code: toLogValue(errorRecord?.code),
-    message: toLogValue(errorRecord?.message ?? error),
-    details: toLogValue(errorRecord?.details),
-    hint: toLogValue(errorRecord?.hint),
+    // Database details can contain rejected content or credentials. Keep only
+    // diagnostic identifiers in logs for public/owner/moderation requests.
   });
 }

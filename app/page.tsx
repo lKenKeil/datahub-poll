@@ -364,6 +364,7 @@ function PollCommunitySignals({ poll, showCreatedAt = false }: { poll: DbPoll; s
 
 export default function Home() {
   const [dbPolls, setDbPolls] = useState<DbPoll[]>([]);
+  const [unavailableOfficialPollIds, setUnavailableOfficialPollIds] = useState<string[] | null>(null);
   const [officialStats, setOfficialStats] = useState<OfficialStatistic[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<HomeCategory>('전체');
@@ -371,28 +372,37 @@ export default function Home() {
   const [statsLoading, setStatsLoading] = useState(true);
   const [openStatId, setOpenStatId] = useState<string | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollRequestGenerationRef = useRef(0);
   const statsRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const officialIdSet = useMemo(() => new Set(POLLS.map((poll) => poll.id)), []);
   const normalizedSearch = useMemo(() => searchTerm.toLowerCase().trim(), [searchTerm]);
 
   const fetchPolls = useCallback(async (options?: { silent?: boolean }) => {
+    const generation = ++pollRequestGenerationRef.current;
     const silent = options?.silent ?? false;
     if (!silent) setLoading(true);
     try {
       const response = await fetch('/api/polls', { cache: 'no-store' });
-      const json = (await response.json()) as { data?: DbPoll[]; error?: string };
+      const json = (await response.json()) as { data?: DbPoll[]; unavailableOfficialPollIds?: string[]; error?: string };
+      if (generation !== pollRequestGenerationRef.current) return;
       if (!response.ok) {
         console.error('데이터 로딩 실패:', json.error ?? 'unknown error');
-        if (!silent) setDbPolls([]);
+        setDbPolls([]);
+        setUnavailableOfficialPollIds(null);
         return;
       }
+      setUnavailableOfficialPollIds(json.unavailableOfficialPollIds ?? []);
       const rows = (json.data ?? []).filter((poll) => {
         return poll.id.startsWith('custom_') || !officialIdSet.has(poll.id.replace('official_', ''));
       });
       setDbPolls(rows);
+    } catch {
+      if (generation !== pollRequestGenerationRef.current) return;
+      setDbPolls([]);
+      setUnavailableOfficialPollIds(null);
     } finally {
-      if (!silent) setLoading(false);
+      if (generation === pollRequestGenerationRef.current) setLoading(false);
     }
   }, [officialIdSet]);
 
@@ -415,6 +425,7 @@ export default function Home() {
 
   useEffect(() => {
     void fetchPolls();
+    return () => { pollRequestGenerationRef.current += 1; };
   }, [fetchPolls]);
 
   useEffect(() => {
@@ -462,13 +473,15 @@ export default function Home() {
   }, [fetchOfficialStats]);
 
   const filteredOfficialPolls = useMemo(() => {
+    if (unavailableOfficialPollIds === null) return [];
     return POLLS.filter((poll) => {
+      if (unavailableOfficialPollIds.includes(`official_${poll.id}`)) return false;
       const categoryMatch = activeCategory === '전체' || getInterestCategory(poll) === activeCategory;
       const text = `${poll.title} ${poll.officialFact}`.toLowerCase();
       const searchMatch = !normalizedSearch || text.includes(normalizedSearch);
       return categoryMatch && searchMatch;
     });
-  }, [activeCategory, normalizedSearch]);
+  }, [activeCategory, normalizedSearch, unavailableOfficialPollIds]);
 
   const filteredCommunityPolls = useMemo(() => {
     return dbPolls.filter((poll) => {

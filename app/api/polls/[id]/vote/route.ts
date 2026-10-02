@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { isValidVoterId } from "@/lib/voter-id";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
+import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/content-report-server";
 import {
   hasUnsafeInputControlCharacters,
   logPublicMutationError,
@@ -45,16 +46,17 @@ export async function POST(request: Request, context: Context) {
     const supabaseMutation = getSupabaseMutationClient();
     const { data: poll, error: pollError } = await supabaseMutation
       .from("polls")
-      .select("id,title,category,options,votes,participants")
+      .select("id,title,category,options,votes,participants,is_hidden")
       .eq("id", id)
       .maybeSingle();
 
     if (pollError) {
+      if (isModerationMigrationMissing(pollError)) return moderationErrorResponse(pollError, "vote-create-poll-read");
       logPublicMutationError("vote-create-poll-read", pollError);
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
-    if (!poll) {
+    if (!poll || poll.is_hidden) {
       return NextResponse.json({ error: "poll not found." }, { status: 404 });
     }
 
@@ -95,6 +97,10 @@ export async function POST(request: Request, context: Context) {
       if (rpcError.code === "P0002") {
         return NextResponse.json({ error: "poll not found." }, { status: 404 });
       }
+      if (rpcError.code === "22023") {
+        return NextResponse.json({ error: "선택지를 확인하고 다시 시도해주세요." }, { status: 400 });
+      }
+      if (isModerationMigrationMissing(rpcError)) return moderationErrorResponse(rpcError, "vote-create-rpc");
       logPublicMutationError("vote-create-rpc", rpcError);
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
@@ -150,16 +156,17 @@ export async function PATCH(request: Request, context: Context) {
     const supabaseMutation = getSupabaseMutationClient();
     const { data: poll, error: pollError } = await supabaseMutation
       .from("polls")
-      .select("id,options,votes,participants")
+      .select("id,options,votes,participants,is_hidden")
       .eq("id", id)
       .maybeSingle();
 
     if (pollError) {
+      if (isModerationMigrationMissing(pollError)) return moderationErrorResponse(pollError, "vote-change-poll-read");
       logPublicMutationError("vote-change-poll-read", pollError);
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
-    if (!poll) {
+    if (!poll || poll.is_hidden) {
       return NextResponse.json({ error: "poll not found." }, { status: 404 });
     }
 
@@ -189,8 +196,15 @@ export async function PATCH(request: Request, context: Context) {
 
     if (rpcError) {
       if (rpcError.code === "P0002") {
+        if (rpcError.message === "CONTENT_NOT_AVAILABLE" || rpcError.message === "Poll not found.") {
+          return NextResponse.json({ error: "질문을 찾을 수 없습니다." }, { status: 404 });
+        }
         return NextResponse.json({ error: "기존 투표를 찾을 수 없습니다." }, { status: 409 });
       }
+      if (rpcError.code === "22023") {
+        return NextResponse.json({ error: "선택지를 확인하고 다시 시도해주세요." }, { status: 400 });
+      }
+      if (isModerationMigrationMissing(rpcError)) return moderationErrorResponse(rpcError, "vote-change-rpc");
       logPublicMutationError("vote-change-rpc", rpcError);
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }

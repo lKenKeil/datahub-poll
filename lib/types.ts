@@ -36,6 +36,7 @@ export type DbPoll = {
   options: string[];
   votes: PollOptionVotes;
   participants: number;
+  is_hidden?: boolean;
   official_fact?: string;
   option_image_paths?: Array<string | null> | null;
   created_at?: string;
@@ -72,6 +73,7 @@ export type CommentRow = {
   user_name: string;
   created_at: string;
   parent_id?: string | null;
+  is_hidden?: boolean;
   like_count?: number;
   dislike_count?: number;
   user_reaction?: "like" | "dislike" | null;

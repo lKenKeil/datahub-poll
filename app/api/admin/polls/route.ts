@@ -1,21 +1,19 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabase-server";
-import { isAdminAuthorized } from "@/lib/admin-auth";
+import { getSupabaseMutationClient } from "@/lib/supabase-server";
+import { requireAdminAuthorization } from "@/lib/admin-auth";
+import { moderationErrorResponse } from "@/lib/content-report-server";
 
 export async function GET(request: Request) {
-  const auth = isAdminAuthorized(request);
-  if (!auth.ok) {
-    return NextResponse.json({ error: auth.reason }, { status: 401 });
+  const denied = requireAdminAuthorization(request);
+  if (denied) return denied;
+  try {
+    const { data, error } = await getSupabaseMutationClient()
+      .from("polls")
+      .select("id,title,category,options,votes,participants,official_fact,created_at,is_hidden,hidden_at")
+      .order("created_at", { ascending: false });
+    if (error) return moderationErrorResponse(error, "admin-polls-read");
+    return NextResponse.json({ data: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return moderationErrorResponse(error, "admin-polls-read-unexpected");
   }
-
-  const { data, error } = await supabaseServer
-    .from("polls")
-    .select("id,title,category,options,votes,participants,official_fact,created_at")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ data: data ?? [] });
 }

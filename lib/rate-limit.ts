@@ -35,6 +35,8 @@ export const RATE_LIMIT_POLICIES = {
   commentReaction: { key: "comment-reaction", limit: 30, windowMs: 60 * 1000 },
   pollOwnerUpdate: { key: "poll-owner-update", limit: 10, windowMs: 60 * 1000 },
   pollOwnerDelete: { key: "poll-owner-delete", limit: 5, windowMs: 10 * 60 * 1000 },
+  contentReport: { key: "content-report", limit: 5, windowMs: 10 * 60 * 1000 },
+  adminAuthFailure: { key: "admin-auth-failure", limit: 10, windowMs: 10 * 60 * 1000 },
 } satisfies Record<string, RateLimitPolicy>;
 
 function normalizeIp(rawValue: string | null) {

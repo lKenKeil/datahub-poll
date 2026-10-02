@@ -23,6 +23,7 @@ import {
   parsePollEditLockConfig,
   type PollEditLockConfig,
 } from "@/lib/poll-edit-lock";
+import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/content-report-server";
 
 const validCategories = new Set<PollCategory>(["학술/통계", "IT/테크", "사회/경제", "라이프스타일", "커뮤니티"]);
 const MAX_MULTIPART_REQUEST_BYTES = 4_400_000;
@@ -215,16 +216,50 @@ export async function GET() {
     const { data, error } = await supabaseServer
       .from("polls")
       .select("*")
+      .eq("is_hidden", false)
       .order("created_at", { ascending: false });
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      if (isModerationMigrationMissing(error)) return moderationErrorResponse(error, "poll-list-read");
+      logPublicMutationError("poll-list-read", error);
+      return NextResponse.json(
+        { error: PUBLIC_INTERNAL_ERROR_MESSAGE },
+        { status: 500, headers: { "Cache-Control": "no-store" } },
+      );
     }
 
-    return NextResponse.json({ data: data ?? [] });
+    // Only IDs leave this privileged query. Static official fallback must not
+    // resurrect a question that moderation has hidden in the database.
+    const supabaseMutation = getSupabaseMutationClient();
+    const [{ data: hiddenPolls, error: hiddenPollsError }, { data: deletedOfficialPolls, error: deletedOfficialError }] = await Promise.all([
+      supabaseMutation.from("polls").select("id").eq("is_hidden", true),
+      supabaseMutation.from("deleted_official_polls").select("poll_id"),
+    ]);
+    if (hiddenPollsError) {
+      if (isModerationMigrationMissing(hiddenPollsError)) return moderationErrorResponse(hiddenPollsError, "poll-list-hidden-state");
+      logPublicMutationError("poll-list-hidden-state", hiddenPollsError);
+      return NextResponse.json(
+        { error: PUBLIC_INTERNAL_ERROR_MESSAGE },
+        { status: 500, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    if (deletedOfficialError) return moderationErrorResponse(deletedOfficialError, "poll-list-deleted-official-state");
+
+    const hiddenIds = new Set((hiddenPolls ?? []).map((poll) => String(poll.id)));
+    const unavailableIds = new Set([
+      ...hiddenIds,
+      ...(deletedOfficialPolls ?? []).map((poll) => String(poll.poll_id)),
+    ]);
+    return NextResponse.json({
+      data: (data ?? []).filter((poll) => !unavailableIds.has(String(poll.id))),
+      unavailableOfficialPollIds: [...unavailableIds].filter((id) => id.startsWith("official_")),
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: `polls GET failed: ${message}` }, { status: 500 });
+    logPublicMutationError("poll-list-unexpected", error);
+    return NextResponse.json(
+      { error: PUBLIC_INTERNAL_ERROR_MESSAGE },
+      { status: 500, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }
 
