@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const { loadEnvConfig } = nextEnv;
 
 export const SEED_ID_PREFIX = "seed_v1_";
-export const EXPECTED_SEED_COUNT = 30;
+export const EXPECTED_SEED_COUNT = 90;
 
 const DB_CATEGORIES = new Set([
   "학술/통계",
@@ -167,6 +167,12 @@ export async function loadSeedEntries() {
   }
   if (new Set(entries.map((entry) => entry.row.id)).size !== entries.length) {
     fail("Generated seed poll IDs must be unique.");
+  }
+  const titles = entries.map((entry) => (
+    entry.row.title.normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase("ko-KR")
+  ));
+  if (new Set(titles).size !== entries.length) {
+    fail("Seed poll titles must be unique.");
   }
   return entries;
 }
