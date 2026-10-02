@@ -7,6 +7,7 @@ import { BrandWordmark } from '@/components/brand-wordmark';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { BRAND } from '@/lib/brand';
 import { trackPollCardClicked } from '@/lib/analytics';
+import { getInterestCategory, selectDiverseLatestPolls, selectUniquePollTopics } from '@/lib/poll-discovery';
 import { POLLS } from '../data/polls';
 import { DbPoll, OfficialStatistic } from '../lib/types';
 import { supabase } from '../lib/supabase';
@@ -92,34 +93,6 @@ const categoryDisplay: Record<HomeCategory, { label: string; description: string
     intro: '데이터로 확인해보는 질문과 흐름',
   },
 };
-
-type CategorySource = {
-  title: string;
-  category?: string | null;
-  options?: string[] | null;
-  tags?: string[] | null;
-};
-
-function getInterestCategory(item: CategorySource): Exclude<HomeCategory, '전체'> {
-  const text = `${item.title} ${item.category ?? ''} ${(item.options ?? []).join(' ')} ${(item.tags ?? []).join(' ')}`.toLowerCase();
-  const keywordGroups: Array<[Exclude<HomeCategory, '전체'>, string[]]> = [
-    ['연애/관계', ['연애', '사랑', '결혼', '썸', '친구', '관계']],
-    ['게임', ['게임', '콘솔', '롤', '오버워치', '닌텐도', '스팀']],
-    ['스포츠', ['스포츠', '축구', '야구', '농구', '배구', '선수']],
-    ['음식', ['음식', '메뉴', '치킨', '피자', '짜장', '짬뽕', '커피', '맛집']],
-    ['엔터/콘텐츠', ['영화', '드라마', '음악', '아이돌', '유튜브', '콘텐츠', '웹툰']],
-    ['IT/제품', ['it/테크', '아이폰', '갤럭시', '노트북', '스마트폰', '소프트웨어', '제품']],
-    ['라이프', ['라이프스타일', '생활', '여행', '패션', '건강', '취미']],
-    ['데이터', ['학술/통계', '통계', '데이터', '지표', '인구', '경제성장률']],
-  ];
-
-  const matched = keywordGroups.find(([, keywords]) => keywords.some((keyword) => text.includes(keyword)));
-  if (matched) return matched[0];
-  if (item.category === '라이프스타일') return '라이프';
-  if (item.category === 'IT/테크') return 'IT/제품';
-  if (item.category === '학술/통계') return '데이터';
-  return '가치관';
-}
 
 function getTrendingScore(poll: DbPoll) {
   const participants = poll.participants ?? 0;
@@ -507,35 +480,30 @@ export default function Home() {
     ?? null;
 
   const popularPolls = useMemo(() => {
-    return rankedActiveCommunityPolls
-      .filter((poll) => poll.id !== featuredCommunityPoll?.id)
-      .slice(0, 6);
-  }, [featuredCommunityPoll?.id, rankedActiveCommunityPolls]);
+    return selectUniquePollTopics(rankedActiveCommunityPolls, featuredCommunityPoll ? [featuredCommunityPoll] : [], 6);
+  }, [featuredCommunityPoll, rankedActiveCommunityPolls]);
 
   const risingPolls = useMemo(() => {
-    const shownIds = new Set([
-      ...(featuredCommunityPoll ? [featuredCommunityPoll.id] : []),
-      ...popularPolls.map((poll) => poll.id),
-    ]);
-    return filteredCommunityPolls
+    const shownPolls = [
+      ...(featuredCommunityPoll ? [featuredCommunityPoll] : []),
+      ...popularPolls,
+    ];
+    const candidates = filteredCommunityPolls
       .filter((poll) => (
         (poll.participants ?? 0) > 0
         && isFreshPoll(poll)
-        && !shownIds.has(poll.id)
       ))
-      .sort(compareByRisingScore)
-      .slice(0, 4);
+      .sort(compareByRisingScore);
+    return selectUniquePollTopics(candidates, shownPolls, 4);
   }, [featuredCommunityPoll, filteredCommunityPolls, popularPolls]);
 
   const latestPolls = useMemo(() => {
-    const shownIds = new Set([
-      ...(featuredCommunityPoll ? [featuredCommunityPoll.id] : []),
-      ...popularPolls.map((poll) => poll.id),
-      ...risingPolls.map((poll) => poll.id),
-    ]);
-    return latestCommunityPolls
-      .filter((poll) => !shownIds.has(poll.id))
-      .slice(0, 8);
+    const shownPolls = [
+      ...(featuredCommunityPoll ? [featuredCommunityPoll] : []),
+      ...popularPolls,
+      ...risingPolls,
+    ];
+    return selectDiverseLatestPolls(latestCommunityPolls, shownPolls);
   }, [featuredCommunityPoll, latestCommunityPolls, popularPolls, risingPolls]);
 
   const filteredOfficialStats = useMemo(() => {

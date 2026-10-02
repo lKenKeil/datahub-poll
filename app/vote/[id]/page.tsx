@@ -15,6 +15,8 @@ import {
   normalizeOptionImagePaths,
 } from '@/lib/poll-option-image-paths';
 import { getStoredPollOwnerToken } from '@/lib/poll-owner-storage';
+import { selectNextPolls } from '@/lib/poll-discovery';
+import { rememberPollVisit } from '@/lib/poll-discovery-session';
 import {
   trackNextPollClicked,
   trackPollViewed,
@@ -159,6 +161,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [reportable, setReportable] = useState(false);
   const [reportTarget, setReportTarget] = useState<ContentReportTarget | null>(null);
   const [recommendationPool, setRecommendationPool] = useState<DbPoll[]>([]);
+  const [recentPollIds, setRecentPollIds] = useState<string[]>([]);
   const [isOfficial, setIsOfficial] = useState(false);
   const [canManagePoll, setCanManagePoll] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -532,6 +535,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     ));
   }, [pollData]);
 
+  const loadedPollId = pollData?.id;
+  useEffect(() => {
+    if (loadedPollId === dbPollId) setRecentPollIds(rememberPollVisit(dbPollId));
+  }, [dbPollId, loadedPollId]);
+
   if (loading) {
     return <div className="min-h-screen bg-slate-50 dark:bg-[#020617] flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold text-lg">투표를 불러오는 중...</div>;
   }
@@ -547,18 +555,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   }
 
   const selectedPercentage = selectedOptionIndex === null ? 0 : (barWidths[selectedOptionIndex] ?? 0);
-  const relatedPolls = [...recommendationPool]
-    .filter((poll) => poll.id !== pollData.id && poll.id !== id && poll.id !== dbPollId)
-    .sort((a, b) => {
-      const categoryPriority = Number(b.category === pollData.category) - Number(a.category === pollData.category);
-      if (categoryPriority !== 0) return categoryPriority;
-      const participantPriority = (b.participants ?? 0) - (a.participants ?? 0);
-      if (participantPriority !== 0) return participantPriority;
-      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return bTime - aTime;
-    })
-    .slice(0, 4);
+  const relatedPolls = selectNextPolls(recommendationPool, pollData, recentPollIds);
   const nextPoll = relatedPolls[0] ?? null;
   const remainingRelatedPolls = voted ? relatedPolls.slice(1) : relatedPolls;
 
