@@ -213,7 +213,7 @@ function PollOptionImagePreview({
   const containerClass = variant === 'hero'
     ? 'mb-3 aspect-[16/7] w-full rounded-2xl'
     : variant === 'card'
-      ? 'mt-4 h-24 w-full rounded-2xl'
+      ? 'mt-2 h-20 w-full rounded-2xl'
       : 'h-20 w-24 shrink-0 rounded-2xl sm:w-28';
   const imageSizes = variant === 'hero'
     ? imageUrls.length > 1
@@ -261,13 +261,13 @@ function PollChoiceHint({ options }: { options: string[] }) {
   if (options.length < 2) return null;
 
   return (
-    <div className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-xs font-bold text-muted dark:text-muted">
+    <div className="grid min-h-12 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 text-sm font-bold text-ink">
       {options.slice(0, 2).map((option, index) => (
         <Fragment key={index}>
           {index === 1 ? <span aria-hidden="true" className="text-xs font-bold tracking-wider text-muted dark:text-muted">VS</span> : null}
           <div className="flex min-w-0 justify-center">
             <div className="inline-flex min-w-0 max-w-full items-center gap-2">
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-link`}>{index + 1}</span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-xs font-extrabold text-link">{index + 1}</span>
               <span className="line-clamp-2 min-w-0 break-words text-left leading-snug">{option}</span>
             </div>
           </div>
@@ -289,7 +289,7 @@ function PollCommunitySignals({ poll, showCreatedAt = false }: { poll: DbPoll; s
   if (signals.length === 0) return null;
 
   return (
-    <div aria-label="활동 정보" className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+    <div aria-label="활동 정보" className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
       {signals.map((signal, index) => (
         <span key={`${signal.label}-${index}`} className="inline-flex min-w-0 items-center gap-2">
           {index > 0 ? <span aria-hidden="true" className="text-slate-300 dark:text-slate-600">·</span> : null}
@@ -615,10 +615,10 @@ export default function Home() {
                   {featuredBattle.options.length === 2 ? (
                     <div className="relative grid grid-cols-2 gap-3">
                       {featuredBattle.options.map((option, index) => (
-                        <div key={`${featuredBattle.id}_${index}`} className="flex min-h-20 min-w-0 items-center justify-center rounded-2xl border border-line bg-surface p-3 dark:border-line dark:bg-surface">
+                        <div key={`${featuredBattle.id}_${index}`} className="flex min-h-20 min-w-0 items-center justify-center rounded-2xl border border-link/20 bg-primary-soft px-3 py-2 shadow-sm shadow-ink/[0.03]">
                           <div className="inline-flex min-w-0 max-w-full items-center gap-2">
-                            <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold bg-primary-soft text-link`}>{index + 1}</span>
-                            <span className="min-w-0 break-words text-left text-sm font-bold text-ink dark:text-ink sm:text-base">{option}</span>
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-extrabold text-white">{index + 1}</span>
+                            <span className="min-w-0 break-words text-left text-base font-bold leading-5 tracking-tight text-ink sm:text-lg sm:leading-6">{option}</span>
                           </div>
                         </div>
                       ))}
@@ -647,7 +647,7 @@ export default function Home() {
                         category: featuredBattle.analyticsCategory,
                         position: 0,
                       })}
-                      className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-black text-white transition hover:bg-primary-hover"
+                      className="inline-flex min-h-11 items-center rounded-xl bg-primary px-4 text-sm font-black text-white shadow-sm shadow-primary/20 transition hover:bg-primary-hover hover:shadow-md"
                     >
                       골라보고 결과 보기 →
                     </Link>
@@ -670,7 +670,7 @@ export default function Home() {
         </div>
 
         {loading || popularPolls.length > 0 ? (
-        <section id="popular-polls" className="scroll-mt-32 space-y-5">
+        <section id="popular-polls" className="scroll-mt-32 space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-bold tracking-tight md:text-3xl">실시간 인기</h2>
@@ -681,7 +681,7 @@ export default function Home() {
           {loading ? (
             <div className="text-sm font-bold text-muted">인기 투표를 불러오는 중...</div>
           ) : (
-            <div className="grid min-w-0 max-w-full items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid min-w-0 max-w-full items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
               {popularPolls.map((poll, index) => (
                 <Link
                   key={poll.id}
@@ -692,18 +692,18 @@ export default function Home() {
                     category: poll.category || '커뮤니티',
                     position: index,
                   })}
-                  className="group flex min-h-52 min-w-0 max-w-full flex-col rounded-2xl border border-line bg-surface p-5 transition hover:-translate-y-1 hover:border-link hover:shadow-md hover:shadow-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:border-line dark:bg-surface dark:hover:border-link dark:focus-visible:ring-offset-canvas md:h-full"
+                  className="group flex min-w-0 max-w-full flex-col rounded-2xl border border-line/70 bg-surface p-4 shadow-sm shadow-ink/[0.04] transition hover:-translate-y-0.5 hover:border-link/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas md:h-full"
                 >
                   <h3 className="line-clamp-3 min-w-0 break-words text-xl font-bold leading-snug text-ink dark:text-ink">{poll.title}</h3>
-                  <p className="mt-2 text-xs font-bold text-link dark:text-link">{getInterestCategory(poll)}</p>
+                  <p className="mt-1 text-xs font-bold text-link">{getInterestCategory(poll)}</p>
                   <PollOptionImagePreview poll={poll} variant="card" />
-                  <div className="mt-4 rounded-xl bg-canvas px-3 py-2.5 dark:bg-surface">
+                  <div className="mt-2 rounded-xl bg-surface-muted px-3 py-2">
                     <PollChoiceHint options={poll.options} />
                   </div>
                   <div className="mt-auto">
                     <PollCommunitySignals poll={poll} />
-                    <div className="mt-4 flex items-center justify-end border-t border-line pt-4 text-sm dark:border-line">
-                      <span className="font-bold text-link transition-transform group-hover:translate-x-1 dark:text-link">결과 보기 →</span>
+                    <div className="mt-2 flex min-h-10 items-center justify-end border-t border-line/60 pt-2 text-sm">
+                      <span className="inline-flex items-center gap-2 font-extrabold text-link underline-offset-4 group-hover:underline"><span>결과 보기</span><span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span></span>
                     </div>
                   </div>
                 </Link>
@@ -790,18 +790,18 @@ export default function Home() {
                     category: poll.category || '커뮤니티',
                     position: index,
                   })}
-                  className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-line bg-surface p-5 transition hover:border-link hover:bg-primary-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:border-line dark:bg-surface dark:hover:bg-primary-soft dark:focus-visible:ring-offset-canvas md:h-full"
+                  className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-line/70 bg-surface p-4 shadow-sm shadow-ink/[0.04] transition hover:-translate-y-0.5 hover:border-link/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas md:h-full"
                 >
                   <h3 className="line-clamp-3 min-w-0 break-words text-lg font-bold leading-snug text-ink dark:text-ink">{poll.title}</h3>
-                  <p className="mt-2 text-xs font-bold text-link dark:text-link">{getInterestCategory(poll)}</p>
+                  <p className="mt-1 text-xs font-bold text-link">{getInterestCategory(poll)}</p>
                   <PollOptionImagePreview poll={poll} variant="card" />
-                  <div className="mt-4 rounded-xl bg-canvas px-3 py-2.5 dark:bg-surface">
+                  <div className="mt-2 rounded-xl bg-surface-muted px-3 py-2">
                     <PollChoiceHint options={poll.options} />
                   </div>
                   <div className="mt-auto">
                     <PollCommunitySignals poll={poll} showCreatedAt />
-                    <div className="mt-4 flex items-center justify-end border-t border-line pt-4 text-xs dark:border-line">
-                      <span className="font-bold text-link transition-transform group-hover:translate-x-1 dark:text-link">투표하러 가기 →</span>
+                    <div className="mt-2 flex min-h-10 items-center justify-end border-t border-line/60 pt-2 text-sm">
+                      <span className="inline-flex items-center gap-2 font-extrabold text-link underline-offset-4 group-hover:underline"><span>투표하러 가기</span><span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span></span>
                     </div>
                   </div>
                 </Link>
