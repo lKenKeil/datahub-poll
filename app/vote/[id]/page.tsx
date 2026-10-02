@@ -939,7 +939,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     );
                   })}
                   {pollData.options.length === 2 ? (
-                    <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-black tracking-wider text-slate-500 shadow-sm dark:border-white/15 dark:bg-slate-900 dark:text-slate-300">VS</span>
+                    <span aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 z-10 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-xs font-bold tracking-wider text-slate-600 shadow-sm dark:border-white/15 dark:bg-slate-900 dark:text-slate-300">VS</span>
                   ) : null}
                 </div>
                 <p className="mt-5 text-center text-xs font-medium text-slate-600 dark:text-slate-400">하나를 고르면 바로 다른 사람들의 선택이 보여요. 투표 후에도 선택을 바꿀 수 있어요.

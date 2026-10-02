@@ -2,6 +2,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 body {
+  font-family: var(--font-geist-sans), "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
   background-color: #f8fafc;
   color: #0f172a;
   margin: 0;
