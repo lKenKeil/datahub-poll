@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { BrandHomeLink } from '@/components/brand-home-link';
 import { AdminReportQueue } from '@/components/admin-report-queue';
 
 type AdminPoll = {
@@ -167,7 +167,7 @@ export default function AdminPage() {
     <main className="min-h-screen w-full min-w-0 bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-200 p-4 sm:p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-3">
-          <Link href="/" className="inline-flex min-h-11 items-center text-sm font-bold hover:text-blue-500">← 홈으로</Link>
+          <BrandHomeLink />
           <div className="flex items-center gap-2">
             <span className="hidden text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 sm:inline">ADMIN PANEL</span>
             <ThemeToggle />

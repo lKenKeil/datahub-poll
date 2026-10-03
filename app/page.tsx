@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { BrandWordmark } from '@/components/brand-wordmark';
+import { BrandHomeLink } from '@/components/brand-home-link';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { BRAND } from '@/lib/brand';
 import { ALL_CATEGORY_PRESENTATION, CATEGORY_PRESENTATION, type CategoryPresentation } from '@/lib/category-presentation';
@@ -553,10 +553,7 @@ export default function Home() {
     <div className="min-h-screen w-full min-w-0 max-w-full bg-canvas text-ink dark:bg-canvas dark:text-ink selection:bg-blue-500/30">
       <nav className="sticky top-0 z-50 w-full min-w-0 max-w-full border-b border-line bg-canvas/95 backdrop-blur-xl">
         <div className="mx-auto flex w-full min-w-0 max-w-[1440px] items-center gap-2 px-4 py-2.5 sm:gap-3 sm:px-6 lg:px-8">
-          <Link href="/" aria-label={`${BRAND.name} 홈`} className="flex min-h-11 shrink-0 items-center">
-            <BrandWordmark />
-          </Link>
-          <span className="hidden text-sm font-medium text-muted xl:inline">{BRAND.descriptor}</span>
+          <BrandHomeLink showDescriptor />
           <label className="relative ml-auto hidden min-w-0 w-full max-w-xl md:block">
             <span className="sr-only">투표 검색</span>
             <span aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">⌕</span>

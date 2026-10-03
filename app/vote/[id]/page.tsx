@@ -4,6 +4,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { BrandHomeLink } from '@/components/brand-home-link';
 import { ContentReportDialog, type ContentReportTarget } from '@/components/content-report-dialog';
 import { HIDDEN_COMMENT_PLACEHOLDER } from '@/lib/content-reporting';
 import { POLLS } from '../../../data/polls';
@@ -842,7 +843,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-canvas pb-24 text-ink dark:bg-canvas dark:text-ink">
       <nav className="sticky top-0 z-50 border-b border-line bg-canvas/95 backdrop-blur-xl">
         <div className="mx-auto flex min-w-0 max-w-[1440px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
-          <Link href="/" className="inline-flex min-h-11 items-center text-sm font-bold text-muted transition-colors hover:text-link dark:text-muted dark:hover:text-ink">← 홈으로</Link>
+          <BrandHomeLink />
           <div className="flex items-center gap-2">
             <div className="hidden items-center gap-2 sm:flex">
             <span className={`rounded-full px-3 py-1 text-xs font-bold ${isOfficial ? 'bg-primary-soft text-link dark:text-link' : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>

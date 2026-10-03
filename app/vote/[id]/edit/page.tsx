@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { BrandHomeLink } from '@/components/brand-home-link';
 import { getPollOptionImagePublicUrl, normalizeOptionImagePaths } from '@/lib/poll-option-image-paths';
 import { getStoredPollOwnerToken, removeStoredPollOwnerToken } from '@/lib/poll-owner-storage';
 import { supabase } from '@/lib/supabase';
@@ -591,7 +592,13 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
     <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-slate-50 pb-24 text-slate-900 dark:bg-[#020617] dark:text-slate-100">
       <nav className="sticky top-0 z-40 border-b border-slate-200 bg-white/85 backdrop-blur-xl dark:border-white/5 dark:bg-[#020617]/85">
         <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
-          <Link href={`/vote/${encodeURIComponent(id)}`} className="inline-flex min-h-11 items-center text-sm font-bold text-slate-600 transition hover:text-blue-600 dark:text-slate-400 dark:hover:text-white">← 투표로 돌아가기</Link>
+          <div className="flex min-w-0 items-center gap-3">
+            <BrandHomeLink />
+            <Link href={`/vote/${encodeURIComponent(id)}`} className="inline-flex min-h-11 shrink-0 items-center text-xs font-bold text-slate-600 transition hover:text-blue-600 dark:text-slate-400 dark:hover:text-white sm:text-sm">
+              <span className="sm:hidden">← 돌아가기</span>
+              <span className="hidden sm:inline">← 투표로 돌아가기</span>
+            </Link>
+          </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm font-bold text-slate-900 dark:text-white sm:inline">내 투표 관리</span>
             <ThemeToggle />

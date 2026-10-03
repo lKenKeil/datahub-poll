@@ -2,11 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { BrandWordmark } from '@/components/brand-wordmark';
-import { BRAND } from '@/lib/brand';
+import { BrandHomeLink } from '@/components/brand-home-link';
 import { PollCategory } from '@/lib/types';
 import type { PollEditLockConfig } from '@/lib/poll-edit-lock';
 import { storePollOwnerToken } from '@/lib/poll-owner-storage';
@@ -440,10 +438,7 @@ export default function CreatePollPage() {
     <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-canvas pb-24 text-ink dark:bg-canvas dark:text-ink">
       <nav className="sticky top-0 z-50 border-b border-line bg-canvas/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
-          <Link href="/" aria-label={`${BRAND.name} 홈으로`} className="inline-flex min-h-11 shrink-0 items-center gap-3">
-            <BrandWordmark compact />
-            <span className="text-xs font-medium text-muted">홈으로</span>
-          </Link>
+          <BrandHomeLink />
           <div className="flex items-center gap-2">
             <span className="hidden rounded-full bg-primary-soft px-3 py-1 text-xs font-bold text-link dark:text-link sm:inline-flex">투표 만들기</span>
             <ThemeToggle />
