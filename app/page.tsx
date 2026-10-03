@@ -202,7 +202,7 @@ function PollOptionImagePreview({
   fallback = null,
 }: {
   poll: PollImageSource;
-  variant: 'hero' | 'card' | 'compact';
+  variant: 'hero' | 'compact';
   eager?: boolean;
   badge?: string;
   fallback?: ReactNode;
@@ -212,18 +212,12 @@ function PollOptionImagePreview({
 
   const containerClass = variant === 'hero'
     ? 'mb-3 aspect-[16/7] w-full rounded-2xl'
-    : variant === 'card'
-      ? 'mt-2 h-20 w-full rounded-2xl'
-      : 'h-20 w-24 shrink-0 rounded-2xl sm:w-28';
+    : 'h-20 w-24 shrink-0 rounded-2xl sm:w-28';
   const imageSizes = variant === 'hero'
     ? imageUrls.length > 1
       ? '(max-width: 1024px) 45vw, 280px'
       : '(max-width: 1024px) calc(100vw - 80px), 560px'
-    : variant === 'card'
-      ? imageUrls.length > 1
-        ? '(max-width: 768px) 45vw, (max-width: 1280px) 22vw, 14vw'
-        : '(max-width: 768px) calc(100vw - 72px), (max-width: 1280px) 45vw, 28vw'
-      : '112px';
+    : '112px';
 
   return (
     <div
@@ -273,6 +267,37 @@ function PollChoiceHint({ options }: { options: string[] }) {
           </div>
         </Fragment>
       ))}
+    </div>
+  );
+}
+
+// Images share the option row rather than adding a separate card-height tier.
+function PollChoiceRail({ poll }: { poll: PollImageSource }) {
+  const paths = normalizeOptionImagePaths(poll.option_image_paths, poll.options.length);
+
+  return (
+    <div className="poll-choice-rail mt-3 grid min-h-20 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-xl bg-primary-soft px-2 py-2 text-base font-bold text-ink">
+      {poll.options.slice(0, 2).map((option, index) => {
+        const imageUrl = getPollOptionImagePublicUrl(supabase, poll.id, index, paths?.[index]);
+        return (
+          <Fragment key={index}>
+            {index === 1 ? <span aria-hidden="true" className="text-xs font-bold tracking-wider text-muted">VS</span> : null}
+            <div className="flex min-w-0 justify-center">
+              <div className="inline-flex min-w-0 max-w-full items-center gap-2">
+                {imageUrl ? (
+                  <span className="relative size-10 shrink-0">
+                    <Image src={imageUrl} alt="" fill sizes="40px" loading="lazy" className="rounded-lg object-cover" />
+                    <span className="absolute -bottom-1 -left-1 flex size-5 items-center justify-center rounded-md bg-primary text-xs font-extrabold text-white">{index + 1}</span>
+                  </span>
+                ) : (
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-extrabold text-white">{index + 1}</span>
+                )}
+                <span className="line-clamp-2 min-w-0 break-words text-left leading-5">{option}</span>
+              </div>
+            </div>
+          </Fragment>
+        );
+      })}
     </div>
   );
 }
@@ -531,6 +556,7 @@ export default function Home() {
           <Link href="/" aria-label={`${BRAND.name} 홈`} className="flex min-h-11 shrink-0 items-center">
             <BrandWordmark />
           </Link>
+          <span className="hidden text-sm font-medium text-muted xl:inline">{BRAND.descriptor}</span>
           <label className="relative ml-auto hidden min-w-0 w-full max-w-xl md:block">
             <span className="sr-only">투표 검색</span>
             <span aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">⌕</span>
@@ -694,15 +720,12 @@ export default function Home() {
                   })}
                   className="group flex min-w-0 max-w-full flex-col rounded-2xl border border-line/70 bg-surface p-4 shadow-sm shadow-ink/[0.04] transition hover:-translate-y-0.5 hover:border-link/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas md:h-full"
                 >
-                  <h3 className="line-clamp-3 min-w-0 break-words text-xl font-bold leading-snug text-ink dark:text-ink">{poll.title}</h3>
+                  <h3 className="line-clamp-2 min-w-0 break-words text-xl font-bold leading-7 text-ink md:min-h-14">{poll.title}</h3>
                   <p className="mt-1 text-xs font-bold text-link">{getInterestCategory(poll)}</p>
-                  <PollOptionImagePreview poll={poll} variant="card" />
-                  <div className="mt-2 rounded-xl bg-surface-muted px-3 py-2">
-                    <PollChoiceHint options={poll.options} />
-                  </div>
+                  <PollChoiceRail poll={poll} />
                   <div className="mt-auto">
                     <PollCommunitySignals poll={poll} />
-                    <div className="mt-2 flex min-h-10 items-center justify-end border-t border-line/60 pt-2 text-sm">
+                    <div className="mt-2 flex min-h-11 items-center justify-end border-t border-line/60 pt-2 text-sm">
                       <span className="inline-flex items-center gap-2 font-extrabold text-link underline-offset-4 group-hover:underline"><span>결과 보기</span><span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span></span>
                     </div>
                   </div>
@@ -761,9 +784,12 @@ export default function Home() {
               <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{latestSectionTitle}</h2>
               <p className="mt-2 text-sm text-muted dark:text-muted">{latestSectionDescription}</p>
             </div>
-            <div aria-live="polite" className="min-w-0 max-w-full border-l-2 border-accent py-1 pl-3 lg:max-w-xl">
-              <p className="text-sm font-semibold text-ink sm:text-base">{activeCategoryDisplay.intro}</p>
-              <p className="mt-1 break-keep text-[13px] leading-5 text-muted">{activeCategoryDisplay.examples.join(' · ')}</p>
+          </div>
+          <div aria-live="polite" className="flex min-w-0 items-start gap-3 border-y border-line py-3 sm:items-center sm:gap-4">
+            <span aria-hidden="true" className="mt-1.5 size-2.5 shrink-0 rounded-full bg-accent sm:mt-0" />
+            <div className="min-w-0 sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
+              <p className="text-base font-bold text-ink">{activeCategoryDisplay.intro}</p>
+              <p className="mt-1 break-words text-sm leading-5 text-muted sm:mt-0">{activeCategoryDisplay.examples.join(' · ')}</p>
             </div>
           </div>
           {loading ? (
@@ -792,15 +818,12 @@ export default function Home() {
                   })}
                   className="group flex min-w-0 max-w-full flex-col rounded-[1.5rem] border border-line/70 bg-surface p-4 shadow-sm shadow-ink/[0.04] transition hover:-translate-y-0.5 hover:border-link/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas md:h-full"
                 >
-                  <h3 className="line-clamp-3 min-w-0 break-words text-lg font-bold leading-snug text-ink dark:text-ink">{poll.title}</h3>
+                  <h3 className="line-clamp-2 min-w-0 break-words text-lg font-bold leading-6 text-ink md:min-h-12">{poll.title}</h3>
                   <p className="mt-1 text-xs font-bold text-link">{getInterestCategory(poll)}</p>
-                  <PollOptionImagePreview poll={poll} variant="card" />
-                  <div className="mt-2 rounded-xl bg-surface-muted px-3 py-2">
-                    <PollChoiceHint options={poll.options} />
-                  </div>
+                  <PollChoiceRail poll={poll} />
                   <div className="mt-auto">
                     <PollCommunitySignals poll={poll} showCreatedAt />
-                    <div className="mt-2 flex min-h-10 items-center justify-end border-t border-line/60 pt-2 text-sm">
+                    <div className="mt-2 flex min-h-11 items-center justify-end border-t border-line/60 pt-2 text-sm">
                       <span className="inline-flex items-center gap-2 font-extrabold text-link underline-offset-4 group-hover:underline"><span>투표하러 가기</span><span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">→</span></span>
                     </div>
                   </div>

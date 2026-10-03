@@ -10,7 +10,7 @@ import type { PollEditLockConfig } from '@/lib/poll-edit-lock';
 import { storePollOwnerToken } from '@/lib/poll-owner-storage';
 import { getUnicodeCodePointLength } from '@/lib/unicode-length';
 import { trackPollCreated } from '@/lib/analytics';
-import { CATEGORY_PRESENTATION, type InterestCategory } from '@/lib/category-presentation';
+import { CATEGORY_CREATE_EXAMPLES, CATEGORY_PRESENTATION, type InterestCategory } from '@/lib/category-presentation';
 
 type InterestCategoryOption = {
   label: InterestCategory;
@@ -128,6 +128,7 @@ export default function CreatePollPage() {
   const [ownerTokenFallback, setOwnerTokenFallback] = useState<OwnerTokenFallback | null>(null);
   const [ownerTokenCopyMessage, setOwnerTokenCopyMessage] = useState('');
   const [editLockPreset, setEditLockPreset] = useState<EditLockPreset>('first_vote');
+  const [previewOpen, setPreviewOpen] = useState(true);
 
   const trimmedTitle = title.trim();
   const titleLength = getUnicodeCodePointLength(title);
@@ -141,6 +142,7 @@ export default function CreatePollPage() {
     [options],
   );
   const selectedCategory = CATEGORY_OPTIONS.find((option) => option.label === interestCategory) ?? null;
+  const createExample = interestCategory ? CATEGORY_CREATE_EXAMPLES[interestCategory] : null;
   const selectedEditLock = EDIT_LOCK_PRESETS.find((option) => option.value === editLockPreset)
     ?? EDIT_LOCK_PRESETS[0];
 
@@ -513,7 +515,7 @@ export default function CreatePollPage() {
                   setTitle(event.target.value);
                 }}
                 className="mt-3 min-h-14 w-full rounded-xl border-2 border-line bg-canvas px-4 py-3 text-base font-bold outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted dark:text-ink sm:text-lg"
-                placeholder="예: 평생 짜장면만 먹기 vs 평생 짬뽕만 먹기"
+                placeholder={createExample?.question ?? '예: 평생 짜장면만 먹기 vs 평생 짬뽕만 먹기'}
                 aria-describedby="poll-title-help"
               />
               <div id="poll-title-help" className="mt-2 flex justify-between gap-4 text-xs font-semibold text-muted">
@@ -566,7 +568,7 @@ export default function CreatePollPage() {
                         onChange={(event) => handleOptionChange(index, event.target.value)}
                         disabled={isSubmitting}
                         className="min-w-0 flex-1 rounded-xl border-2 border-line bg-surface p-3.5 text-base font-semibold outline-none transition placeholder:text-muted focus:border-link dark:border-line dark:bg-surface-muted dark:text-ink"
-                        placeholder={index === 0 ? '예: 짜장면' : index === 1 ? '예: 짬뽕' : `선택지 ${index + 1}`}
+                        placeholder={index < 2 ? createExample?.options[index] ?? (index === 0 ? '예: 짜장면' : '예: 짬뽕') : `선택지 ${index + 1}`}
                       />
                       <button
                         type="button"
@@ -683,7 +685,7 @@ export default function CreatePollPage() {
                   setDescription(event.target.value);
                 }}
                 className="mt-3 h-24 w-full resize-none rounded-xl border-2 border-line bg-canvas p-3.5 text-base font-medium outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted dark:text-ink"
-                placeholder="예: 가격은 같다고 가정하고 골라주세요."
+                placeholder={createExample?.description ?? '예: 가격은 같다고 가정하고 골라주세요.'}
               />
               <p className="mt-2 text-right text-xs font-semibold text-muted">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
             </section>
@@ -732,17 +734,25 @@ export default function CreatePollPage() {
           </div>
 
           <aside className="min-w-0 space-y-4 lg:sticky lg:top-24">
-            <details className="group rounded-3xl border border-line bg-hero p-4 shadow-lg shadow-blue-950/[0.04] sm:p-5">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30 lg:cursor-default">
-                <div>
-                  <span className="text-sm font-bold text-link dark:text-link">미리보기</span>
-                  <p className="mt-0.5 text-xs text-muted lg:hidden">눌러서 상세 화면 모습을 확인해보세요.</p>
-                  <p className="mt-0.5 hidden text-xs text-muted lg:block">상세 화면에서 보일 모습을 확인해보세요.</p>
-                </div>
-                <span aria-hidden="true" className="text-lg font-bold text-link transition group-open:rotate-45 dark:text-link lg:hidden">+</span>
-              </summary>
+            <section className="rounded-3xl border border-line bg-hero p-4 shadow-lg shadow-blue-950/[0.04] sm:p-5" aria-label="질문 미리보기">
+              <button
+                type="button"
+                aria-expanded={previewOpen}
+                aria-controls="poll-preview-content"
+                onClick={() => setPreviewOpen((open) => !open)}
+                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-line bg-surface px-3 py-2 text-link transition hover:border-link hover:bg-primary-soft focus-visible:ring-2 focus-visible:ring-link"
+              >
+                <span className="inline-flex items-center gap-2 text-sm font-bold">
+                  <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></svg>
+                  미리보기
+                </span>
+                <span className="inline-flex items-center gap-2 text-xs font-semibold">
+                  {previewOpen ? '접기' : '펼치기'}
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`transition-transform ${previewOpen ? 'rotate-180' : ''}`}><path d="m6 9 6 6 6-6" /></svg>
+                </span>
+              </button>
 
-              <div className="mt-4 hidden border-t border-line pt-4 group-open:block dark:border-blue-500/15 lg:block">
+              <div id="poll-preview-content" hidden={!previewOpen} className="mt-4 border-t border-line pt-4">
                 <div className="flex justify-end">
                   <span className="shrink-0 rounded-full bg-primary px-2.5 py-1 text-xs font-bold text-white">
                     {selectedCategory ? `${selectedCategory.icon} ${selectedCategory.label}` : '카테고리 선택'}
@@ -785,7 +795,7 @@ export default function CreatePollPage() {
                 </div>
                 <p className="mt-4 text-center text-xs font-medium text-muted dark:text-muted">선택하면 결과를 확인할 수 있어요.</p>
               </div>
-            </details>
+            </section>
 
             {errorMessage ? (
               <div role="alert" aria-live="assertive" className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-700 dark:text-rose-300">
