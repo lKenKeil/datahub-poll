@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
-import { BRAND } from "@/lib/brand";
+import { BRAND, BRAND_SOCIAL_IMAGE } from "@/lib/brand";
 import { getSiteUrl } from "@/lib/site-url";
 
 const geistSans = Geist({
@@ -25,11 +25,13 @@ export const metadata: Metadata = {
     siteName: BRAND.name,
     locale: "ko_KR",
     type: "website",
+    images: [BRAND_SOCIAL_IMAGE],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: BRAND.openGraphTitle,
     description: BRAND.openGraphDescription,
+    images: [BRAND_SOCIAL_IMAGE],
   },
 };
 

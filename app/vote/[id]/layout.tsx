@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { POLLS } from '@/data/polls';
-import { BRAND } from '@/lib/brand';
+import { BRAND, BRAND_SOCIAL_IMAGE } from '@/lib/brand';
 import { getSupabaseMutationClient, supabaseServer } from '@/lib/supabase-server';
 
 type VoteLayoutProps = {
@@ -81,11 +81,13 @@ export async function generateMetadata({ params }: VoteLayoutProps): Promise<Met
         siteName: BRAND.name,
         locale: 'ko_KR',
         type: 'website',
+        images: [BRAND_SOCIAL_IMAGE],
       },
       twitter: {
-        card: 'summary',
+        card: 'summary_large_image',
         title,
         description: BRAND.openGraphDescription,
+        images: [BRAND_SOCIAL_IMAGE],
       },
     };
   }
@@ -109,11 +111,13 @@ export async function generateMetadata({ params }: VoteLayoutProps): Promise<Met
       siteName: BRAND.name,
       locale: 'ko_KR',
       type: 'website',
+      images: [BRAND_SOCIAL_IMAGE],
     },
     twitter: {
-      card: 'summary',
+      card: 'summary_large_image',
       title,
       description,
+      images: [BRAND_SOCIAL_IMAGE],
     },
   };
 }

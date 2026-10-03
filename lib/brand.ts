@@ -13,3 +13,10 @@ export const BRAND = {
   openGraphDescription:
     '일상에서 문득 궁금하지만 정답은 없는 질문을 사람들에게 묻고, 선택과 의견을 확인해보세요.',
 } as const;
+
+export const BRAND_SOCIAL_IMAGE = {
+  url: '/opengraph-image',
+  width: 1200,
+  height: 630,
+  alt: `${BRAND.name} — ${BRAND.descriptor}`,
+} as const;
