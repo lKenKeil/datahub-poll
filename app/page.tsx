@@ -276,7 +276,7 @@ function PollChoiceRail({ poll }: { poll: PollImageSource }) {
   const paths = normalizeOptionImagePaths(poll.option_image_paths, poll.options.length);
 
   return (
-    <div className="poll-choice-rail mt-3 grid min-h-20 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-xl bg-primary-soft px-2 py-2 text-base font-bold text-ink">
+    <div className="poll-choice-rail mt-3 grid min-h-20 min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-xl bg-primary-soft px-2 py-2 text-base font-bold text-ink md:px-3 md:text-lg">
       {poll.options.slice(0, 2).map((option, index) => {
         const imageUrl = getPollOptionImagePublicUrl(supabase, poll.id, index, paths?.[index]);
         return (
@@ -290,9 +290,9 @@ function PollChoiceRail({ poll }: { poll: PollImageSource }) {
                     <span className="absolute -bottom-1 -left-1 flex size-5 items-center justify-center rounded-md bg-primary text-xs font-extrabold text-white">{index + 1}</span>
                   </span>
                 ) : (
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-extrabold text-white">{index + 1}</span>
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-extrabold text-white md:size-8 md:text-sm">{index + 1}</span>
                 )}
-                <span className="line-clamp-2 min-w-0 break-words text-left leading-5">{option}</span>
+                <span className="line-clamp-2 min-w-0 break-words text-left leading-5 md:leading-6">{option}</span>
               </div>
             </div>
           </Fragment>
@@ -624,7 +624,7 @@ export default function Home() {
                 <div className="relative min-w-0 lg:col-start-1 lg:row-start-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full border border-blue-500/20 bg-primary-soft px-3 py-1 text-xs font-black text-link dark:text-link">
-                      {featuredBattle.participants > 0 ? '오늘의 질문' : '첫 선택을 기다려요'}
+                      {featuredBattle.participants > 0 ? `${BRAND.name} 오늘의 질문` : `${BRAND.name} · 첫 선택을 기다려요`}
                     </span>
                     <span className="text-xs font-bold text-muted dark:text-muted">{featuredBattle.category}</span>
                   </div>
@@ -643,8 +643,8 @@ export default function Home() {
                       {featuredBattle.options.map((option, index) => (
                         <div key={`${featuredBattle.id}_${index}`} className="flex min-h-20 min-w-0 items-center justify-center rounded-2xl border border-link/20 bg-primary-soft px-3 py-2 shadow-sm shadow-ink/[0.03]">
                           <div className="inline-flex min-w-0 max-w-full items-center gap-2">
-                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-extrabold text-white">{index + 1}</span>
-                            <span className="min-w-0 break-words text-left text-base font-bold leading-5 tracking-tight text-ink sm:text-lg sm:leading-6">{option}</span>
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary text-xs font-extrabold text-white md:size-8 md:text-sm">{index + 1}</span>
+                            <span className="min-w-0 break-words text-left text-base font-bold leading-5 tracking-tight text-ink sm:text-lg sm:leading-6 md:text-xl">{option}</span>
                           </div>
                         </div>
                       ))}
@@ -833,18 +833,18 @@ export default function Home() {
           )}
         </section>
 
-        <section id="official-intel-feed" className="space-y-5 rounded-3xl border border-line bg-surface-muted p-5 md:p-8">
+        <section id="official-intel-feed" className="space-y-4 border-t border-line pt-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-2xl font-bold tracking-tight md:text-3xl">📊 데이터로 보는 세상</h2>
-              <p className="mt-2 text-sm text-muted dark:text-muted">투표 뒤에 있는 흐름을 공식 통계로 확인해보세요.</p>
+              <h2 className="text-lg font-bold tracking-tight md:text-xl">데이터로 보는 세상</h2>
+              <p className="mt-1 text-sm text-muted">질문 뒤의 흐름은 공식 통계로 살펴보세요.</p>
             </div>
-            <span className="text-xs font-bold text-link dark:text-link">신뢰할 수 있는 공식 출처</span>
+            <span className="text-xs font-medium text-muted">공식 출처 기반</span>
           </div>
           {statsLoading ? (
             <div className="text-sm font-bold text-muted">공식 통계를 불러오는 중...</div>
           ) : filteredOfficialStats.length === 0 ? (
-            <div className="rounded-3xl border border-line bg-surface p-8 text-sm text-muted dark:bg-surface">
+            <div className="py-4 text-sm text-muted">
               검색과 관심사 조건에 맞는 공식 통계가 없어요.
             </div>
           ) : (
@@ -854,30 +854,30 @@ export default function Home() {
                 const latestYear = readLatestYear(item);
                 const opened = openStatId === item.id;
                 return (
-                  <article key={item.id} className="rounded-2xl border border-line bg-surface p-5 transition hover:border-link dark:border-line dark:bg-surface">
+                  <article key={item.id} className="min-w-0 border-t border-line py-4">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="rounded-full bg-primary-soft px-2.5 py-1 text-xs font-bold text-link dark:text-link">{item.category}</span>
+                      <span className="text-xs font-medium text-muted">{item.category}</span>
                       <span className="text-xs font-medium text-muted dark:text-muted">{latestYear ? `최근 ${latestYear}` : item.published_at ?? item.observed_at ?? '최근 공개'}</span>
                     </div>
-                    <h3 className="mt-4 text-lg font-bold leading-snug text-ink dark:text-ink">{item.title}</h3>
+                    <h3 className="mt-2 text-base font-bold leading-snug text-ink">{item.title}</h3>
                     {latestValue !== null ? (
-                      <p className="mt-3 text-2xl font-black text-link dark:text-link">{formatStatValue(item, latestValue)}</p>
+                      <p className="mt-2 text-xl font-bold text-ink">{formatStatValue(item, latestValue)}</p>
                     ) : null}
-                    {item.summary ? <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-muted dark:text-muted">{item.summary}</p> : null}
-                    <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4 dark:border-line">
+                    {item.summary ? <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted">{item.summary}</p> : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={() => setOpenStatId(opened ? null : item.id)}
-                        className="min-h-10 rounded-xl border border-line px-3 py-1.5 text-xs font-bold hover:border-link dark:border-line"
+                        className="min-h-11 rounded-xl border border-line px-3 py-1.5 text-xs font-medium text-muted hover:border-link hover:text-ink"
                       >
                         {opened ? '접기' : '요약 보기'}
                       </button>
-                      <Link href={`/stats/${item.id}`} className="inline-flex min-h-10 items-center rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-white hover:bg-primary-hover">
+                      <Link href={`/stats/${item.id}`} className="inline-flex min-h-11 items-center rounded-xl px-3 py-1.5 text-xs font-medium text-muted hover:bg-surface-muted hover:text-ink">
                         관련 데이터 보기
                       </Link>
                     </div>
                     {opened ? (
-                      <div className="mt-3 space-y-2 rounded-2xl border border-line bg-canvas p-3 dark:border-line dark:bg-surface">
+                      <div className="mt-3 space-y-2 border-l-2 border-line pl-3">
                         {item.methodology ? <p className="text-xs text-ink dark:text-muted"><span className="font-black">방법론:</span> {item.methodology}</p> : null}
                         {item.confidence_note ? <p className="text-xs text-ink dark:text-muted"><span className="font-black">신뢰 참고:</span> {item.confidence_note}</p> : null}
                       </div>
