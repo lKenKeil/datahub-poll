@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { AuthButton } from '@/components/auth-button';
+import { AuthPrompt } from '@/components/auth-prompt';
+import { useAuth } from '@/components/auth-provider';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { PollCategory } from '@/lib/types';
 import type { PollEditLockConfig } from '@/lib/poll-edit-lock';
@@ -108,6 +111,7 @@ const EDIT_LOCK_PRESETS: EditLockPresetOption[] = [
 ];
 
 export default function CreatePollPage() {
+  const { user, openLogin } = useAuth();
   const router = useRouter();
   const submissionInFlight = useRef(false);
   const nextOptionKeyRef = useRef(2);
@@ -341,6 +345,7 @@ export default function CreatePollPage() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!user) { openLogin('질문을 올리려면 로그인이 필요해요.', '/create'); return; }
     if (submissionInFlight.current || ownerTokenFallback) return;
     setErrorMessage('');
 
@@ -394,6 +399,11 @@ export default function CreatePollPage() {
       };
 
       if (!response.ok) {
+        if (response.status === 401) {
+          openLogin('질문을 올리려면 다시 로그인해주세요.', '/create');
+          setErrorMessage('세션이 만료됐어요. 다시 로그인해주세요.');
+          return;
+        }
         setErrorMessage(
           response.status === 429
             ? json.error ?? '투표를 너무 빠르게 만들고 있어요. 잠시 후 다시 시도해주세요.'
@@ -434,6 +444,20 @@ export default function CreatePollPage() {
     }
   };
 
+  if (!user && !ownerTokenFallback) return (
+    <main className="min-h-screen w-full min-w-0 bg-canvas text-ink">
+      <nav className="sticky top-0 z-50 border-b border-line bg-canvas/95 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6 lg:px-8">
+          <BrandHomeLink /><div className="flex items-center gap-2"><AuthButton /><ThemeToggle /></div>
+        </div>
+      </nav>
+      <div className="mx-auto max-w-[1440px] space-y-5 px-4 pt-6 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-bold">질문 올리기</h1>
+        <AuthPrompt message="질문을 올리려면 로그인이 필요해요." returnTo="/create" />
+      </div>
+    </main>
+  );
+
   return (
     <main className="min-h-screen w-full min-w-0 overflow-x-hidden bg-canvas pb-24 text-ink dark:bg-canvas dark:text-ink">
       <nav className="sticky top-0 z-50 border-b border-line bg-canvas/95 backdrop-blur-xl">
@@ -441,6 +465,7 @@ export default function CreatePollPage() {
           <BrandHomeLink />
           <div className="flex items-center gap-2">
             <span className="hidden rounded-full bg-primary-soft px-3 py-1 text-xs font-bold text-link dark:text-link sm:inline-flex">투표 만들기</span>
+            <AuthButton />
             <ThemeToggle />
           </div>
         </div>

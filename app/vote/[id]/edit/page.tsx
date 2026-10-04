@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { AuthButton } from '@/components/auth-button';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { getPollOptionImagePublicUrl, normalizeOptionImagePaths } from '@/lib/poll-option-image-paths';
 import { getStoredPollOwnerToken, removeStoredPollOwnerToken } from '@/lib/poll-owner-storage';
@@ -601,6 +602,7 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
           </div>
           <div className="flex items-center gap-2">
             <span className="hidden text-sm font-bold text-slate-900 dark:text-white sm:inline">내 투표 관리</span>
+            <AuthButton />
             <ThemeToggle />
           </div>
         </div>

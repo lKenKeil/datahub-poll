@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { supabaseServer } from "@/lib/supabase-server";
 import { OfficialStatistic } from "@/lib/types";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthButton } from "@/components/auth-button";
 import { BrandHomeLink } from "@/components/brand-home-link";
 
 type Params = { id: string };
@@ -140,6 +141,7 @@ export default async function OfficialStatisticPage({
       <div className="max-w-4xl mx-auto px-6 pt-10 space-y-8">
         <div className="flex items-center justify-between gap-3">
           <BrandHomeLink />
+          <AuthButton />
           <ThemeToggle />
         </div>
 

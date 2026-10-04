@@ -19,6 +19,13 @@ let rpcFailure = null;
 let storageFailure = null;
 let cleanedPaths = [];
 let clientNumber = 1;
+let authUser;
+let authFailure = null;
+let authThrows = false;
+let callbackFailure = null;
+let exchangedCode = null;
+let refreshCookies = false;
+let refreshCalls = 0;
 const originalAdminKey = process.env.ADMIN_DASHBOARD_KEY;
 const originalConsoleError = console.error;
 const loggedErrors = [];
@@ -36,6 +43,7 @@ const OLD_PATH = `${POLL_ID}/options/0/66666666-6666-4666-8666-666666666666.webp
 const NEW_PATH = `${POLL_ID}/options/0/77777777-7777-4777-8777-777777777777.webp`;
 const PRIVATE_TEXT = "hidden-original-must-not-leave-server";
 const RAW_ERROR = "raw-sql-constraint-secret-must-not-leave-server";
+const AUTH_USER_ID = "99999999-9999-4999-8999-999999999999";
 
 function reset() {
   calls.length = 0;
@@ -45,6 +53,13 @@ function reset() {
   rpcFailure = null;
   storageFailure = null;
   cleanedPaths = [];
+  authUser = { id: AUTH_USER_ID, email: "member@example.invalid", user_metadata: { full_name: "서버 사용자" }, is_anonymous: false };
+  authFailure = null;
+  authThrows = false;
+  callbackFailure = null;
+  exchangedCode = null;
+  refreshCookies = false;
+  refreshCalls = 0;
   database = {
     polls: [{
       id: POLL_ID, title: "모의 질문", category: "커뮤니티", options: ["선택 1", "선택 2"],
@@ -96,8 +111,14 @@ function supabaseClient(role) {
             if (queryFailure && (!queryFailure.table || queryFailure.table === table)) {
               return { data: null, error: queryFailure.error };
             }
-            if (query.insert) throw new Error("Unexpected direct insert in read-only route test.");
-            let rows = role === "anon" ? publicRows(table) : database[table] ?? [];
+            if (query.insert) {
+              assert.equal(role, "service");
+              assert.equal(table, "comments");
+              database.comments.push({ id: query.insert.parent_id ? REPLY_ID : COMMENT_ID,
+                parent_id: null, is_hidden: false, created_at: new Date().toISOString(), ...query.insert });
+            }
+            let rows = query.insert ? database.comments.slice(-1)
+              : role === "anon" ? publicRows(table) : database[table] ?? [];
             rows = rows.filter((row) => query.equals.every(([field, value]) =>
               Array.isArray(value) ? value.includes(row[field]) : row[field] === value));
             rows = rows.slice(0, query.limit).map((row) => query.fields === "*" ? { ...row }
@@ -111,6 +132,29 @@ function supabaseClient(role) {
     async rpc(name, payload) {
       calls.push({ role, rpc: name, payload });
       if (rpcFailure) return { data: null, error: rpcFailure };
+      if (name === "create_owned_poll") {
+        database.polls.push({ id: payload.p_poll_id, title: payload.p_title, category: payload.p_category,
+          options: payload.p_options, votes: payload.p_votes, participants: payload.p_participants,
+          is_hidden: false });
+        return { data: payload.p_poll_id, error: null };
+      }
+      if (name === "increment_poll_vote" || name === "change_poll_vote") {
+        const poll = database.polls.find((row) => row.id === payload.p_poll_id);
+        let vote = database.poll_votes.find((row) => row.poll_id === poll.id && row.voter_id === payload.p_voter_id);
+        if (name === "increment_poll_vote" && vote) return { data: null, error: { code: "23505" } };
+        if (name === "change_poll_vote" && !vote) return { data: null, error: { code: "P0002", message: "Existing vote not found." } };
+        const index = payload.p_option_index ?? payload.p_new_option_index;
+        const changed = !vote || vote.option_index !== index;
+        if (vote) poll.votes[vote.option_index] -= 1;
+        else {
+          vote = { poll_id: poll.id, voter_id: payload.p_voter_id };
+          database.poll_votes.push(vote);
+          poll.participants += 1;
+        }
+        vote.option_index = index;
+        poll.votes[index] += 1;
+        return { data: { id: poll.id, votes: [...poll.votes], participants: poll.participants, option_index: index, changed }, error: null };
+      }
       if (name === "submit_content_report") {
         const key = `${payload.p_target_type}:${payload.p_target_id}:${payload.p_reporter_hash}`;
         const duplicate = database.reports.has(key);
@@ -134,9 +178,43 @@ function supabaseClient(role) {
   };
 }
 
+function cookieJar(initial = []) {
+  const entries = new Map(initial.map((cookie) => [cookie.name, { ...cookie }]));
+  return {
+    getAll: () => [...entries.values()],
+    set(name, value, options) {
+      const cookie = typeof name === "object" ? name : { name, value, ...options };
+      entries.set(cookie.name, cookie);
+    },
+  };
+}
 const overrides = {
   "server-only": {},
-  "next/server": { NextResponse: Response },
+  "next/server": { NextResponse: class extends Response {
+    static redirect(url, options) { return new Response(null, { status: 307, ...options, headers: { ...options?.headers, Location: String(url) } }); }
+    static next() { const response = new Response(null); response.cookies = cookieJar(); return response; }
+  } },
+  "@supabase/ssr": {
+    createServerClient: (_url, _key, options) => ({ auth: {
+      async getClaims() {
+        refreshCalls += 1;
+        if (refreshCookies) {
+          options.cookies.setAll([{ name: "sb-test-auth-token.0", value: "test-refreshed-part0", options: { path: "/" } }]);
+          options.cookies.setAll([{ name: "sb-test-auth-token.1", value: "test-refreshed-part1", options: { path: "/" } }]);
+        }
+        return { data: { claims: {} }, error: null };
+      },
+    } }),
+  },
+  "@/lib/supabase-auth-server": {
+    createSupabaseAuthServerClient: async () => ({ auth: {
+      async getUser() {
+        if (authThrows) throw new Error(RAW_ERROR);
+        return { data: { user: authUser }, error: authFailure };
+      },
+      async exchangeCodeForSession(code) { exchangedCode = code; return { error: callbackFailure }; },
+    } }),
+  },
   "@/lib/supabase-server": {
     supabaseServer: supabaseClient("anon"),
     getSupabaseMutationClient: () => supabaseClient("service"),
@@ -485,6 +563,210 @@ test("text-only poll deletion skips storage entirely", async () => {
   const result = await pollDeletion.deletePollWithImageCleanup(supabaseClient("service"), POLL_ID);
   assert.deepEqual(result, { ok: true });
   assert.equal(calls.length, 1);
+});
+
+const callback = loadModule("app/auth/callback/route.ts");
+const { getSafeAuthReturnPath } = loadModule("lib/auth-redirect.ts");
+const { getAuthDisplayName } = loadModule("lib/auth-display.ts");
+const createBody = { title: "새 질문입니다", category: "커뮤니티", options: ["첫 선택", "다음 선택"] };
+
+test("anonymous public reads/results remain available without altering votes", async () => {
+  authUser = null;
+  database.polls[0].votes = [8, 4];
+  database.polls[0].participants = 12;
+  const before = JSON.stringify(database.polls);
+  await responseJson(await list.GET(), 200);
+  const json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.deepEqual(json.poll.votes, [8, 4]);
+  assert.equal(JSON.stringify(database.polls), before);
+});
+
+test("anonymous create/comment/reply/reaction all fail401 before DB access", async () => {
+  authUser = null;
+  for (const response of [
+    await list.POST(request("POST", createBody)),
+    await comments.POST(request("POST", { text: "의견" }), context()),
+    await comments.POST(request("POST", { text: "답글", parentId: COMMENT_ID }), context()),
+    await reactions.POST(request("POST", { userFingerprint: "test-fingerprint", reaction: "like" }), context(COMMENT_ID)),
+  ]) {
+    const json = await responseJson(response, 401);
+    assert.equal(json.code, "AUTH_REQUIRED");
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("unverified expired anonymous-provider and unavailable Auth sessions fail closed", async () => {
+  for (const scenario of ["error", "missing", "anonymous", "throws"]) {
+    authFailure = scenario === "error" ? { message: RAW_ERROR } : null;
+    authUser = scenario === "missing" ? null : { id: AUTH_USER_ID, is_anonymous: scenario === "anonymous" };
+    authThrows = scenario === "throws";
+    assertNoSecrets(await responseJson(await comments.POST(request("POST", { text: "의견" }), context()), 401));
+  }
+  assert.equal(calls.length, 0);
+  assertNoSecrets(loggedErrors);
+});
+
+test("cross-origin protected mutations fail403 before auth or DB writes", async () => {
+  for (const headers of [{ origin: "https://evil.invalid" }, { "sec-fetch-site": "cross-site" }]) {
+    await responseJson(await list.POST(request("POST", createBody, headers)), 403);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("authenticated poll creation preserves owner RPC and zero initial vote data", async () => {
+  const before = JSON.stringify(database.polls[0]);
+  const json = await responseJson(await list.POST(request("POST", createBody, { origin: "https://example.invalid" })), 200);
+  const call = calls.find((entry) => entry.rpc === "create_owned_poll");
+  assert.equal(call.role, "service");
+  assert.deepEqual(call.payload.p_votes, [0, 0]);
+  assert.equal(call.payload.p_participants, 0);
+  assert.match(call.payload.p_owner_token_hash, /^[0-9a-f]{64}$/);
+  assert.equal(call.payload.p_edit_lock_mode, "first_vote");
+  assert.ok(json.data.ownerToken);
+  assert.equal(JSON.stringify(database.polls[0]), before);
+});
+
+test("comment identity comes only from verified session and is not serialized publicly", async () => {
+  const json = await responseJson(await comments.POST(request("POST", {
+    text: "내 의견", user_id: REPORTER_ID, userId: REPORTER_ID, user_name: "다른 작성자", email: "spoof@example.invalid",
+  }), context()), 200);
+  assert.equal(database.comments[0].user_id, AUTH_USER_ID);
+  assert.equal(database.comments[0].user_name, "서버 사용자");
+  assert.equal(json.data.user_name, "서버 사용자");
+  assert.ok(!Object.hasOwn(json.data, "user_id"));
+  const publicJson = await responseJson(await detail.GET(request(), context()), 200);
+  assert.ok(!Object.hasOwn(publicJson.comments[0], "user_id"));
+  assert.ok(!JSON.stringify(publicJson).includes(AUTH_USER_ID));
+});
+
+test("authenticated reply preserves same-poll parent relation and server identity", async () => {
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, is_hidden: false, user_name: "익명 유저", text: "기존 의견" });
+  const json = await responseJson(await comments.POST(request("POST", { text: "새 답글", parentId: COMMENT_ID }), context()), 200);
+  assert.equal(json.data.parent_id, COMMENT_ID);
+  assert.equal(database.comments[1].user_id, AUTH_USER_ID);
+  assert.equal(database.comments[0].user_name, "익명 유저");
+});
+
+test("authenticated reply rejects hidden and other-poll parents without inserts", async () => {
+  database.comments.push({ id: COMMENT_ID, poll_id: "custom_other", is_hidden: false });
+  await responseJson(await comments.POST(request("POST", { text: "새 답글", parentId: COMMENT_ID }), context()), 404);
+  database.comments[0].poll_id = POLL_ID;
+  database.comments[0].is_hidden = true;
+  await responseJson(await comments.POST(request("POST", { text: "새 답글", parentId: COMMENT_ID }), context()), 404);
+  assert.equal(calls.filter((call) => call.insert).length, 0);
+});
+
+test("logout session removal blocks new mutations while preserving existing data", async () => {
+  await responseJson(await comments.POST(request("POST", { text: "로그인 의견" }), context()), 200);
+  const before = JSON.stringify(database);
+  authUser = null;
+  await responseJson(await comments.POST(request("POST", { text: "로그아웃 의견" }), context()), 401);
+  assert.equal(JSON.stringify(database), before);
+});
+
+test("anonymous voting/change/duplicate protection still use existing voter RPCs", async () => {
+  authUser = null;
+  const voteBody = { optionIndex: 0, voterId: VOTER_ID };
+  await responseJson(await votes.POST(request("POST", voteBody), context()), 200);
+  await responseJson(await votes.POST(request("POST", voteBody), context()), 409);
+  await responseJson(await votes.PATCH(request("PATCH", { ...voteBody, optionIndex: 1 }), context()), 200);
+  assert.deepEqual(database.polls[0].votes, [0, 1]);
+  assert.equal(database.polls[0].participants, 1);
+  assert.equal(database.poll_votes.length, 1);
+  assert.ok(calls.filter((call) => call.rpc).every((call) => call.payload.p_voter_id === VOTER_ID));
+});
+
+test("anonymous reporting remains available independently of Auth", async () => {
+  authUser = null;
+  await responseJson(await reports.POST(request("POST", reportBody())), 200);
+  assert.equal(calls.at(-1).rpc, "submit_content_report");
+});
+
+test("authenticated insert DB failure never leaks internal error or user credentials", async () => {
+  queryHook = (query) => { if (query.insert) queryFailure = { table: "comments", error: { code: "XX000", message: RAW_ERROR } }; };
+  assertNoSecrets(await responseJson(await comments.POST(request("POST", { text: "의견" }), context()), 500));
+  assertNoSecrets(loggedErrors);
+});
+
+test("safe return path rejects external encoded/backslash/control and auth-loop targets", async () => {
+  for (const value of [undefined, "https://evil.invalid", "//evil.invalid", "/\\evil.invalid", "/%2fevil.invalid", "/%5cevil.invalid", "/%0aevil", "/api/polls", "/auth/login", "/vote/../auth/callback", "/%61uth/login", "/bad%escape"]) {
+    assert.equal(getSafeAuthReturnPath(value), "/");
+  }
+  assert.equal(getSafeAuthReturnPath("/create"), "/create");
+  assert.equal(getSafeAuthReturnPath(`/vote/${POLL_ID}`), `/vote/${POLL_ID}`);
+});
+
+test("PKCE callback success redirects safely without caching or exposing code", async () => {
+  const response = await callback.GET(new Request("https://example.invalid/auth/callback?code=test-code&next=/create"));
+  assert.equal(response.status, 307);
+  assert.equal(response.headers.get("location"), "https://example.invalid/create");
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(exchangedCode, "test-code");
+  const unsafe = await callback.GET(new Request("https://example.invalid/auth/callback?code=test-code&next=//evil.invalid"));
+  assert.equal(unsafe.headers.get("location"), "https://example.invalid/");
+});
+
+test("PKCE callback cancellation/missing code/failed exchange expose only generic state", async () => {
+  callbackFailure = { message: RAW_ERROR };
+  for (const query of ["code=test-code", "error=access_denied&error_description=" + RAW_ERROR, ""]) {
+    const response = await callback.GET(new Request(`https://example.invalid/auth/callback?${query}`));
+    const location = response.headers.get("location");
+    assert.ok(location.startsWith("https://example.invalid/auth/login?"));
+    assert.ok(!location.includes(RAW_ERROR));
+    assert.ok(!location.includes("test-code"));
+    assert.ok(location.endsWith("#"));
+  }
+});
+
+test("display names sanitize controls, bound Unicode length and fall back safely", async () => {
+  assert.equal(getAuthDisplayName({ user_metadata: { full_name: "  나\u202e\u0000  다  " } }), "나 다");
+  assert.equal(Array.from(getAuthDisplayName({ user_metadata: { name: "😀".repeat(50) } })).length, 40);
+  assert.equal(getAuthDisplayName({ user_metadata: {}, email: "member@example.invalid" }), "member");
+  assert.equal(getAuthDisplayName({ user_metadata: {} }), "Askio 사용자");
+});
+
+const authProxy = loadModule("proxy.ts");
+test("proxy skips anonymous Auth requests and preserves public availability without env", async () => {
+  const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const originalKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  try {
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    await authProxy.proxy({ cookies: cookieJar() });
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-public-key";
+    await authProxy.proxy({ cookies: cookieJar() });
+    assert.equal(refreshCalls, 0);
+  } finally {
+    if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
+    if (originalKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalKey;
+  }
+});
+
+test("proxy forwards refreshed cookie chunks to request and uncached response", async () => {
+  const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const originalKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  try {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "test-public-key";
+    refreshCookies = true;
+    const req = { cookies: cookieJar([{ name: "sb-test-auth-token", value: "test-old-cookie" }]) };
+    const response = await authProxy.proxy(req);
+    assert.equal(refreshCalls, 1);
+    assert.equal(response.headers.get("cache-control"), "private, no-store");
+    for (const name of ["sb-test-auth-token.0", "sb-test-auth-token.1"]) {
+      assert.equal(response.cookies.getAll().find((cookie) => cookie.name === name)?.value,
+        req.cookies.getAll().find((cookie) => cookie.name === name)?.value);
+    }
+    assert.equal(response.cookies.getAll().length, 2);
+  } finally {
+    if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+    else process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
+    if (originalKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalKey;
+  }
 });
 
 let failed = 0;

@@ -4,6 +4,8 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { AuthButton } from '@/components/auth-button';
+import { useAuth } from '@/components/auth-provider';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { ContentReportDialog, type ContentReportTarget } from '@/components/content-report-dialog';
 import { HIDDEN_COMMENT_PLACEHOLDER } from '@/lib/content-reporting';
@@ -138,6 +140,7 @@ function getOrCreateVoterId() {
 }
 
 export default function VotePage({ params }: { params: Promise<VotePageParams> }) {
+  const { user, loading: authLoading, openLogin } = useAuth();
   const resolvedParams = use(params);
   const id = resolvedParams.id;
 
@@ -728,6 +731,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) { openLogin('의견을 남기려면 로그인이 필요해요.'); return; }
     if (!inputText.trim()) return;
     setActionError('');
 
@@ -747,6 +751,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setComments((prev) => [{ ...json.data!, parent_id: null, like_count: 0, dislike_count: 0, user_reaction: null }, ...prev]);
       setInputText('');
     } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 401) {
+        openLogin('의견을 남기려면 다시 로그인해주세요.');
+        return;
+      }
       if (error instanceof ApiResponseError && error.status === 404) {
         await fetchAllData({ silent: true });
         setActionError('현재 이 질문에 의견을 남길 수 없어요.');
@@ -761,6 +769,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   };
 
   const handleReplySubmit = async (parentId: string) => {
+    if (!user) { openLogin('답글을 남기려면 로그인이 필요해요.'); return; }
     if (!replyText.trim()) return;
     setActionError('');
 
@@ -784,6 +793,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setReplyText('');
       setReplyTargetId(null);
     } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 401) {
+        openLogin('답글을 남기려면 다시 로그인해주세요.');
+        return;
+      }
       if (error instanceof ApiResponseError && error.status === 404) {
         await fetchAllData({ silent: true });
         setActionError('현재 이 의견에 답글을 남길 수 없어요.');
@@ -798,6 +811,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   };
 
   const handleReaction = async (commentId: string, reaction: 'like' | 'dislike') => {
+    if (!user) { openLogin('의견에 반응하려면 로그인이 필요해요.'); return; }
     setActionError('');
     try {
       const target = comments.find((comment) => String(comment.id) === commentId);
@@ -826,6 +840,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         ),
       );
     } catch (error) {
+      if (error instanceof ApiResponseError && error.status === 401) {
+        openLogin('의견에 반응하려면 다시 로그인해주세요.');
+        return;
+      }
       if (error instanceof ApiResponseError && error.status === 404) {
         await fetchAllData({ silent: true });
         setActionError('현재 이 의견에 반응할 수 없어요.');
@@ -853,6 +871,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               {voted ? '참여 완료' : '투표 진행 중'}
             </span>
             </div>
+            <AuthButton />
             <ThemeToggle />
           </div>
         </div>
@@ -1108,8 +1127,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 rows={3}
                 value={inputText}
                 onChange={(event) => setInputText(event.target.value)}
+                readOnly={!user}
+                onFocus={() => { if (!user && !authLoading) openLogin('의견을 남기려면 로그인이 필요해요.'); }}
                 className="mt-3 w-full resize-none rounded-xl border border-line bg-surface p-4 text-sm font-medium leading-relaxed text-ink outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted dark:text-ink"
-                placeholder="선택한 이유를 남겨주세요."
+                placeholder={user ? '선택한 이유를 남겨주세요.' : '의견을 남기려면 로그인해주세요.'}
               />
               <div className="mt-3 flex justify-end">
                 <button type="submit" className="min-h-11 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas">의견 남기기</button>
@@ -1126,7 +1147,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 {parentComments.map((comment) => (
                   <article key={comment.id} className="py-6 first:pt-5 last:pb-5 sm:px-1">
                     {!comment.is_hidden ? <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-black text-link dark:text-link">익명 사용자</span>
+                      <span className="min-w-0 break-words text-xs font-black text-link dark:text-link">{comment.user_name || '익명 사용자'}</span>
                       <time className="shrink-0 text-xs font-semibold text-muted dark:text-muted">{new Date(comment.created_at).toLocaleDateString('ko-KR')}</time>
                     </div> : null}
                     <p className={`mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-[15px] font-medium leading-7 ${comment.is_hidden ? 'text-muted dark:text-muted' : 'text-ink dark:text-ink'}`}>{comment.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : comment.text}</p>
@@ -1134,7 +1155,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     {!comment.is_hidden ? <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                       <button type="button" aria-pressed={comment.user_reaction === 'like'} onClick={() => handleReaction(String(comment.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${comment.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-line text-muted hover:border-emerald-400 dark:border-line dark:text-muted'}`}><span>좋아요</span><span>{comment.like_count}</span>{comment.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
                       <button type="button" aria-pressed={comment.user_reaction === 'dislike'} onClick={() => handleReaction(String(comment.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${comment.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-line text-muted hover:border-rose-400 dark:border-line dark:text-muted'}`}><span>싫어요</span><span>{comment.dislike_count}</span>{comment.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
-                      <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id))} className="min-h-10 rounded-xl border border-line px-3 py-1.5 font-bold text-muted transition hover:border-link hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:border-line dark:text-muted dark:focus-visible:ring-offset-canvas">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
+                      <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => { if (!user) { openLogin('답글을 남기려면 로그인이 필요해요.'); return; } setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id)); }} className="min-h-10 rounded-xl border border-line px-3 py-1.5 font-bold text-muted transition hover:border-link hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:border-line dark:text-muted dark:focus-visible:ring-offset-canvas">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
                       <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(comment.id), label: '의견' })} aria-label="이 의견 신고하기" className="min-h-11 rounded-xl px-3 text-muted hover:text-ink dark:text-muted dark:hover:text-ink">신고</button>
                     </div> : null}
 
@@ -1151,7 +1172,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                         {(repliesByParent.get(String(comment.id)) ?? []).map((reply) => (
                           <div key={reply.id} className="py-4 first:pt-1 last:pb-1">
                             {!reply.is_hidden ? <div className="flex items-center justify-between gap-3">
-                              <span className="text-xs font-bold text-link dark:text-link">답글 · 익명 사용자</span>
+                              <span className="min-w-0 break-words text-xs font-bold text-link dark:text-link">답글 · {reply.user_name || '익명 사용자'}</span>
                               <time className="shrink-0 text-xs font-semibold text-muted dark:text-muted">{new Date(reply.created_at).toLocaleDateString('ko-KR')}</time>
                             </div> : null}
                             <p className={`mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm font-medium leading-6 ${reply.is_hidden ? 'text-muted dark:text-muted' : 'text-ink dark:text-muted'}`}>{reply.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : reply.text}</p>

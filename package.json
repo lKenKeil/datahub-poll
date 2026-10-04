@@ -13,7 +13,8 @@
     "sync:official-stats": "node scripts/sync-official-stats.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.102.1",
+    "@supabase/ssr": "0.10.0",
+    "@supabase/supabase-js": "2.102.1",
     "next": "16.2.2",
     "next-themes": "^0.4.6",
     "posthog-js": "^1.435.6",

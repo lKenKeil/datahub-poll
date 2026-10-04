@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { requireAuthenticatedUser } from "@/lib/auth-server";
+import { getAuthDisplayName } from "@/lib/auth-display";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import {
@@ -22,6 +24,8 @@ export async function POST(request: Request, context: Context) {
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
+    const auth = await requireAuthenticatedUser(request);
+    if (auth.response) return auth.response;
     const { id } = await context.params;
     if (!id.trim() || id.length > 200 || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid poll id." }, { status: 400 });
@@ -99,7 +103,8 @@ export async function POST(request: Request, context: Context) {
     const insertPayload: Record<string, unknown> = {
       poll_id: id,
       text,
-      user_name: "익명 유저",
+      user_name: getAuthDisplayName(auth.user),
+      user_id: auth.user.id,
     };
 
     if (parentId) {
@@ -109,7 +114,7 @@ export async function POST(request: Request, context: Context) {
     const { data, error } = await supabaseMutation
       .from("comments")
       .insert(insertPayload)
-      .select("*")
+      .select("id,poll_id,parent_id,text,user_name,created_at")
       .single();
 
     if (error) {
@@ -121,7 +126,7 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ data }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     logPublicMutationError("comment-create-unexpected", error);
     return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });

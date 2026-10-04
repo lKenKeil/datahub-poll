@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { AuthButton } from '@/components/auth-button';
 import { BRAND } from '@/lib/brand';
 import { ALL_CATEGORY_PRESENTATION, CATEGORY_PRESENTATION, type CategoryPresentation } from '@/lib/category-presentation';
 import { trackPollCardClicked } from '@/lib/analytics';
@@ -569,6 +570,7 @@ export default function Home() {
             <span className="sm:hidden">+ 질문</span>
             <span className="hidden sm:inline">+ 질문 올리기</span>
           </Link>
+          <AuthButton />
           <ThemeToggle />
         </div>
         <div className="w-full min-w-0 max-w-full px-4 pb-3 md:hidden">

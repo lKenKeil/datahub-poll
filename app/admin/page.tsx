@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { AuthButton } from '@/components/auth-button';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { AdminReportQueue } from '@/components/admin-report-queue';
 
@@ -170,6 +171,7 @@ export default function AdminPage() {
           <BrandHomeLink />
           <div className="flex items-center gap-2">
             <span className="hidden text-xs font-bold tracking-wider text-slate-600 dark:text-slate-400 sm:inline">ADMIN PANEL</span>
+            <AuthButton />
             <ThemeToggle />
           </div>
         </div>

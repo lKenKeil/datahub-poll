@@ -195,7 +195,7 @@ export async function GET(request: Request, context: Context) {
 
     const [{ data: poll, error: pollError }, { data: comments, error: commentsError }] = await Promise.all([
       supabaseServer.from("polls").select("*").eq("id", id).eq("is_hidden", false).maybeSingle(),
-      supabaseServer.from("comments").select("*").eq("poll_id", id)
+      supabaseServer.from("comments").select("id,poll_id,parent_id,text,user_name,created_at,is_hidden").eq("poll_id", id)
         .eq("is_hidden", false).order("created_at", { ascending: false }),
     ]);
     if (pollError) throw pollError;

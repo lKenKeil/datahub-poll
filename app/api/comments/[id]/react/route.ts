@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuthenticatedUser } from "@/lib/auth-server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import { normalizeReportTarget, moderationErrorResponse } from "@/lib/content-report-server";
@@ -21,6 +22,8 @@ export async function POST(request: Request, context: Context) {
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
+    const auth = await requireAuthenticatedUser(request);
+    if (auth.response) return auth.response;
     const { id } = await context.params;
     if (!normalizeReportTarget("comment", id) || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid comment id." }, { status: 400 });

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { requireAuthenticatedUser } from "@/lib/auth-server";
 import { randomUUID } from "node:crypto";
 import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server";
 import { PollCategory } from "@/lib/types";
@@ -272,6 +273,8 @@ export async function POST(request: Request) {
   let pollInserted = false;
 
   try {
+    const auth = await requireAuthenticatedUser(request);
+    if (auth.response) return auth.response;
     const raw = await parsePollCreateRequest(request);
 
     const rawTitleInput = typeof raw?.title === "string" ? raw.title : "";
