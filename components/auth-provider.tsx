@@ -46,6 +46,7 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
     <div className="space-y-3" aria-busy={pending !== null}>
       <button type="button" disabled={pending !== null} onClick={() => void signIn('google')} className="min-h-11 w-full rounded-xl border border-line bg-surface px-4 py-3 text-sm font-bold text-ink disabled:opacity-60">{pending === 'google' ? '연결 중...' : 'Google로 계속하기'}</button>
       <button type="button" disabled={pending !== null} onClick={() => void signIn('kakao')} className="min-h-11 w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary-hover disabled:opacity-60">{pending === 'kakao' ? '연결 중...' : '카카오로 계속하기'}</button>
+      <p className="text-xs leading-relaxed text-muted">처음이신가요? Google 또는 카카오로 계속하면 자동으로 가입돼요.</p>
       <p aria-live="polite" className="text-sm text-danger">{error}</p>
     </div>
   );
@@ -59,7 +60,9 @@ function AuthDialog({ request, close }: { request: LoginRequest; close: () => vo
     return () => { dialog?.close(); };
   }, []);
   return (
-    <dialog ref={ref} onCancel={close} onClose={close} aria-labelledby="auth-dialog-title" aria-describedby="auth-dialog-message" className="m-auto w-[calc(100%-32px)] max-w-sm rounded-3xl border border-line bg-surface p-5 text-ink backdrop:bg-black/45">
+    // Close through Escape or the button, not the cleanup's native close event:
+    // Strict Mode closes and reopens the dialog while replaying this effect.
+    <dialog ref={ref} onCancel={close} aria-labelledby="auth-dialog-title" aria-describedby="auth-dialog-message" className="m-auto w-[calc(100%-32px)] max-w-sm rounded-3xl border border-line bg-surface p-5 text-ink backdrop:bg-black/45">
       <div className="mb-5 flex items-center justify-between gap-3">
         <h2 id="auth-dialog-title" className="text-xl font-bold">로그인</h2>
         <button type="button" onClick={close} aria-label="로그인 안내 닫기" className="min-h-11 min-w-11 rounded-xl text-muted">닫기</button>
