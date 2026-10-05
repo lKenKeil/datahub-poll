@@ -44,6 +44,8 @@ const NEW_PATH = `${POLL_ID}/options/0/77777777-7777-4777-8777-777777777777.webp
 const PRIVATE_TEXT = "hidden-original-must-not-leave-server";
 const RAW_ERROR = "raw-sql-constraint-secret-must-not-leave-server";
 const AUTH_USER_ID = "99999999-9999-4999-8999-999999999999";
+const PROFILE_NICKNAME = "느긋한펭귄4821";
+const PROFILE_AVATAR = "https://avatar.example.invalid/public-profile.png";
 
 function reset() {
   calls.length = 0;
@@ -67,6 +69,8 @@ function reset() {
       created_at: new Date().toISOString(), edit_lock_mode: "first_vote", is_hidden: false,
     }],
     comments: [], poll_votes: [], comment_reactions: [], deleted_official_polls: [],
+    profiles: [{ id: AUTH_USER_ID, nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR,
+      onboarding_completed: false, created_at: "2026-10-01", updated_at: "2026-10-01" }],
     poll_ownership: [{ poll_id: POLL_ID, owner_token_hash: createHash("sha256").update(OWNER_TOKEN).digest("hex") }],
     reports: new Set(),
   };
@@ -104,6 +108,7 @@ function supabaseClient(role) {
         maybeSingle() { query.single = true; return chain; },
         single() { query.single = true; return chain; },
         insert(value) { query.insert = value; return chain; },
+        update(value) { query.update = value; return chain; },
         then(resolve, reject) {
           return Promise.resolve().then(() => {
             calls.push({ ...query });
@@ -116,6 +121,16 @@ function supabaseClient(role) {
               assert.equal(table, "comments");
               database.comments.push({ id: query.insert.parent_id ? REPLY_ID : COMMENT_ID,
                 parent_id: null, is_hidden: false, created_at: new Date().toISOString(), ...query.insert });
+            }
+            if (query.update) {
+              assert.equal(role, "service");
+              assert.equal(table, "profiles");
+              const target = database.profiles.find((row) => query.equals.every(([field, value]) => row[field] === value));
+              if (query.update.nickname && database.profiles.some((row) => row.id !== target?.id
+                && row.nickname.toLowerCase() === query.update.nickname.toLowerCase())) {
+                return { data: null, error: { code: "23505", message: RAW_ERROR } };
+              }
+              if (target) Object.assign(target, query.update);
             }
             let rows = query.insert ? database.comments.slice(-1)
               : role === "anon" ? publicRows(table) : database[table] ?? [];
@@ -132,11 +147,31 @@ function supabaseClient(role) {
     async rpc(name, payload) {
       calls.push({ role, rpc: name, payload });
       if (rpcFailure) return { data: null, error: rpcFailure };
-      if (name === "create_owned_poll") {
+      if (name === "ensure_user_profile" || name === "recommend_user_profile_nickname") {
+        assert.equal(role, "service");
+        let profile = database.profiles.find((row) => row.id === payload.p_user_id);
+        if (!profile) {
+          profile = { id: payload.p_user_id, nickname: "파란여우1937", avatar_url: null, onboarding_completed: false };
+          database.profiles.push(profile);
+        }
+        if (name === "recommend_user_profile_nickname") profile.nickname = "졸린수달6142";
+        return { data: { nickname: profile.nickname, avatar_url: profile.avatar_url,
+          onboarding_completed: profile.onboarding_completed }, error: null };
+      }
+      if (name === "create_owned_poll_with_author") {
+        assert.equal(role, "service");
         database.polls.push({ id: payload.p_poll_id, title: payload.p_title, category: payload.p_category,
           options: payload.p_options, votes: payload.p_votes, participants: payload.p_participants,
+          author_user_id: payload.p_author_user_id, is_anonymous: payload.p_is_anonymous,
           is_hidden: false });
         return { data: payload.p_poll_id, error: null };
+      }
+      if (name === "update_owned_poll") {
+        const poll = database.polls.find((row) => row.id === payload.p_poll_id);
+        Object.assign(poll, { title: payload.p_title, category: payload.p_category,
+          options: payload.p_options, official_fact: payload.p_official_fact,
+          option_image_paths: payload.p_option_image_paths });
+        return { data: { ...poll }, error: null };
       }
       if (name === "increment_poll_vote" || name === "change_poll_vote") {
         const poll = database.polls.find((row) => row.id === payload.p_poll_id);
@@ -289,6 +324,8 @@ const adminResolve = loadModule("app/api/admin/reports/resolve/route.ts");
 const adminDismiss = loadModule("app/api/admin/reports/dismiss/route.ts");
 const adminDelete = loadModule("app/api/admin/reports/delete/route.ts");
 const pollDeletion = loadModule("lib/poll-deletion.ts");
+const profileRoute = loadModule("app/api/profile/route.ts");
+const { validateNickname } = loadModule("lib/nickname.ts");
 const reportBody = (extra = {}) => ({ targetType: "poll", targetId: POLL_ID, reporterId: REPORTER_ID, reason: "spam", ...extra });
 
 test("hidden poll detail returns unavailable404 without original data", async () => {
@@ -614,15 +651,17 @@ test("cross-origin protected mutations fail403 before auth or DB writes", async 
   assert.equal(calls.length, 0);
 });
 
-test("authenticated poll creation preserves owner RPC and zero initial vote data", async () => {
+test("authenticated poll creation preserves owner RPC wrapper and zero initial vote data", async () => {
   const before = JSON.stringify(database.polls[0]);
   const json = await responseJson(await list.POST(request("POST", createBody, { origin: "https://example.invalid" })), 200);
-  const call = calls.find((entry) => entry.rpc === "create_owned_poll");
+  const call = calls.find((entry) => entry.rpc === "create_owned_poll_with_author");
   assert.equal(call.role, "service");
   assert.deepEqual(call.payload.p_votes, [0, 0]);
   assert.equal(call.payload.p_participants, 0);
   assert.match(call.payload.p_owner_token_hash, /^[0-9a-f]{64}$/);
   assert.equal(call.payload.p_edit_lock_mode, "first_vote");
+  assert.equal(call.payload.p_author_user_id, AUTH_USER_ID);
+  assert.equal(call.payload.p_is_anonymous, false);
   assert.ok(json.data.ownerToken);
   assert.equal(JSON.stringify(database.polls[0]), before);
 });
@@ -632,12 +671,14 @@ test("comment identity comes only from verified session and is not serialized pu
     text: "내 의견", user_id: REPORTER_ID, userId: REPORTER_ID, user_name: "다른 작성자", email: "spoof@example.invalid",
   }), context()), 200);
   assert.equal(database.comments[0].user_id, AUTH_USER_ID);
-  assert.equal(database.comments[0].user_name, "서버 사용자");
-  assert.equal(json.data.user_name, "서버 사용자");
+  assert.equal(database.comments[0].user_name, PROFILE_NICKNAME);
+  assert.equal(json.data.user_name, PROFILE_NICKNAME);
   assert.ok(!Object.hasOwn(json.data, "user_id"));
   const publicJson = await responseJson(await detail.GET(request(), context()), 200);
   assert.ok(!Object.hasOwn(publicJson.comments[0], "user_id"));
   assert.ok(!JSON.stringify(publicJson).includes(AUTH_USER_ID));
+  assert.ok(!JSON.stringify(publicJson).includes("서버 사용자"));
+  assert.ok(!JSON.stringify(publicJson).includes("member@example.invalid"));
 });
 
 test("authenticated reply preserves same-poll parent relation and server identity", async () => {
@@ -687,6 +728,332 @@ test("authenticated insert DB failure never leaks internal error or user credent
   queryHook = (query) => { if (query.insert) queryFailure = { table: "comments", error: { code: "XX000", message: RAW_ERROR } }; };
   assertNoSecrets(await responseJson(await comments.POST(request("POST", { text: "의견" }), context()), 500));
   assertNoSecrets(loggedErrors);
+});
+
+function assertNoAccountIdentity(value, { anonymous = false } = {}) {
+  const serialized = JSON.stringify(value);
+  for (const prohibited of [AUTH_USER_ID, "member@example.invalid", "서버 사용자", "spoof@example.invalid"]) {
+    assert.ok(!serialized.includes(prohibited), "Public response leaked account identity or OAuth metadata.");
+  }
+  if (anonymous) {
+    assert.ok(!serialized.includes(PROFILE_NICKNAME), "Anonymous response leaked a profile nickname.");
+    assert.ok(!serialized.includes(PROFILE_AVATAR), "Anonymous response leaked a profile avatar.");
+  }
+  const checkKeys = (item) => {
+    if (!item || typeof item !== "object") return;
+    for (const [key, nested] of Object.entries(item)) {
+      assert.ok(!["user_id", "author_user_id", "email", "user_metadata"].includes(key), "Response exposed a private account field.");
+      if (anonymous) assert.ok(!["nickname", "avatar_url"].includes(key), "Anonymous response must omit profile fields entirely.");
+      checkKeys(nested);
+    }
+  };
+  checkKeys(value);
+  assertNoSecrets(value);
+}
+
+test("profile routes require verified Auth and do not trust caller account identifiers", async () => {
+  authUser = null;
+  await responseJson(await profileRoute.GET(request()), 401);
+  await responseJson(await profileRoute.PATCH(request("PATCH", { nickname: "다른펭귄" })), 401);
+  await responseJson(await profileRoute.POST(request("POST", { action: "recommend" })), 401);
+  assert.equal(calls.length, 0);
+  authUser = { id: AUTH_USER_ID, is_anonymous: false };
+  const before = JSON.stringify(database.profiles);
+  await responseJson(await profileRoute.PATCH(request("PATCH", { nickname: "다른펭귄", userId: REPORTER_ID })), 400);
+  await responseJson(await profileRoute.POST(request("POST", { action: "recommend", userId: REPORTER_ID })), 400);
+  assert.equal(JSON.stringify(database.profiles), before);
+  const json = await responseJson(await profileRoute.GET(new Request(`https://example.invalid/api/profile?userId=${REPORTER_ID}`)), 200);
+  assert.equal(calls.at(-1).payload.p_user_id, AUTH_USER_ID);
+  assert.deepEqual(json.data, { nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR, onboarding_completed: false });
+  assertNoAccountIdentity(json);
+});
+
+test("profile GET ensures missing provider-neutral profile without publishing Auth metadata", async () => {
+  database.profiles = [];
+  authUser = { id: AUTH_USER_ID, is_anonymous: false, user_metadata: { nickname: "카카오실명", full_name: "서버 사용자" } };
+  const response = await profileRoute.GET(request());
+  const json = await responseJson(response, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(database.profiles.length, 1);
+  assert.equal(database.profiles[0].id, AUTH_USER_ID);
+  assert.equal(json.data.nickname, "파란여우1937");
+  assert.equal(json.data.onboarding_completed, false);
+  assert.equal(json.data.avatar_url, null);
+  assertNoAccountIdentity(json);
+  assert.ok(!JSON.stringify(json).includes("카카오실명"));
+});
+
+test("profile PATCH trims nickname, updates only verified account and persists onboarding", async () => {
+  database.profiles.push({ id: REPORTER_ID, nickname: "다른사용자", avatar_url: null, onboarding_completed: false });
+  const otherBefore = JSON.stringify(database.profiles[1]);
+  const json = await responseJson(await profileRoute.PATCH(request("PATCH", { nickname: "  새펭귄_12  ", onboardingCompleted: true })), 200);
+  assert.equal(json.data.nickname, "새펭귄_12");
+  assert.equal(json.data.onboarding_completed, true);
+  assert.equal(database.profiles[0].nickname, "새펭귄_12");
+  assert.equal(JSON.stringify(database.profiles[1]), otherBefore);
+  assert.deepEqual(calls.find((call) => call.update).equals, [["id", AUTH_USER_ID]]);
+  assertNoAccountIdentity(json);
+});
+
+test("profile PATCH accepts onboarding-only completion without changing nickname", async () => {
+  const json = await responseJson(await profileRoute.PATCH(request("PATCH", { onboardingCompleted: true })), 200);
+  assert.equal(json.data.nickname, PROFILE_NICKNAME);
+  assert.equal(json.data.onboarding_completed, true);
+  assert.deepEqual(calls.find((call) => call.update).update, { onboarding_completed: true });
+});
+
+test("profile nickname collision maps mocked case-insensitive unique error to safe409", async () => {
+  database.profiles.push({ id: REPORTER_ID, nickname: "AskioUser", avatar_url: null, onboarding_completed: false });
+  const before = JSON.stringify(database.profiles);
+  for (const nickname of ["AskioUser", "askiouser", "ASKIOUSER"]) {
+    const json = await responseJson(await profileRoute.PATCH(request("PATCH", { nickname })), 409);
+    assert.equal(json.code, "NICKNAME_TAKEN");
+    assertNoSecrets(json);
+  }
+  assert.equal(JSON.stringify(database.profiles), before);
+});
+
+test("nickname policy rejects reserved, controls, URLs, invalid characters and length", async () => {
+  for (const nickname of ["admin", "ADMIN", "Administrator", "Askio", "운영자", "관리자", "공식", "OFFICIAL",
+    "a", "가".repeat(17), "hello world", "a.b", "https://site", "😀😀", "abc\u0000", "abc\u202e", "\nabc\n"]) {
+    assert.equal(validateNickname(nickname).ok, false, `Nickname unexpectedly accepted: ${JSON.stringify(nickname)}`);
+    await responseJson(await profileRoute.PATCH(request("PATCH", { nickname })), 400);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("nickname policy supports exact Korean Unicode boundaries and normal whitespace trimming", async () => {
+  for (const nickname of ["가나", "가".repeat(16), "AB", "a".repeat(16), "새이름_1", "ㄱㅏ"]) {
+    const validated = validateNickname(nickname);
+    assert.equal(validated.ok, true);
+    const json = await responseJson(await profileRoute.PATCH(request("PATCH", { nickname: `  ${nickname}  ` })), 200);
+    assert.equal(json.data.nickname, nickname);
+  }
+});
+
+test("nickname policy rejects raw leading tabs and invisible FEFF before whitespace trimming", async () => {
+  for (const nickname of ["\t새닉네임", "새닉네임\t", "\uFEFF새닉네임", "새닉네임\uFEFF", "  \t새닉네임  "]) {
+    assert.equal(validateNickname(nickname).ok, false);
+    await responseJson(await profileRoute.PATCH(request("PATCH", { nickname })), 400);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("profile recommend uses only server session ID and returns safe generated fields", async () => {
+  const response = await profileRoute.POST(request("POST", { action: "recommend" }));
+  const json = await responseJson(response, 200);
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(calls.at(-1), { role: "service", rpc: "recommend_user_profile_nickname", payload: { p_user_id: AUTH_USER_ID } });
+  assert.equal(json.data.nickname, "졸린수달6142");
+  assertNoAccountIdentity(json);
+});
+
+test("profile writes reject invalid body flags and cross-origin requests before mutation", async () => {
+  for (const body of [null, [], {}, { avatar_url: PROFILE_AVATAR }, { onboardingCompleted: "true" }, { nickname: 1 }]) {
+    await responseJson(await profileRoute.PATCH(request("PATCH", body)), 400);
+  }
+  await responseJson(await profileRoute.PATCH(request("PATCH", { nickname: "새닉네임" }, { origin: "https://evil.invalid" })), 403);
+  await responseJson(await profileRoute.POST(request("POST", { action: "unknown" })), 400);
+  assert.equal(calls.length, 0);
+});
+
+test("profile updates/recommendations share rate limiting without additional mutation", async () => {
+  const ip = "198.51.100.111";
+  for (let count = 0; count < 10; count += 1) {
+    await responseJson(await profileRoute.PATCH(request("PATCH", { onboardingCompleted: true }, {}, ip)), 200);
+  }
+  const before = calls.length;
+  const response = await profileRoute.POST(request("POST", { action: "recommend" }, {}, ip));
+  await responseJson(response, 429);
+  assert.ok(Number(response.headers.get("retry-after")) > 0);
+  assert.equal(calls.length, before);
+});
+
+test("profile missing migration and DB failures return generic fail-closed errors", async () => {
+  rpcFailure = { code: "PGRST202", message: RAW_ERROR, details: PRIVATE_TEXT };
+  const missing = await responseJson(await profileRoute.GET(request()), 503);
+  assert.equal(missing.code, "ACCOUNT_MIGRATION_REQUIRED");
+  assertNoSecrets(missing);
+  rpcFailure = { code: "XX000", message: RAW_ERROR, details: PRIVATE_TEXT };
+  assertNoSecrets(await responseJson(await profileRoute.POST(request("POST", { action: "recommend" })), 500));
+  assertNoSecrets(loggedErrors);
+});
+
+test("profile GET strips unsafe avatars rather than trusting provider URL protocols", async () => {
+  database.profiles[0].avatar_url = "javascript:alert(1)";
+  const json = await responseJson(await profileRoute.GET(request()), 200);
+  assert.equal(json.data.avatar_url, null);
+  assertNoAccountIdentity(json);
+});
+
+test("anonymous comment preserves internal account ID but publishes no profile identity", async () => {
+  const json = await responseJson(await comments.POST(request("POST", {
+    text: "익명 의견", isAnonymous: true, userId: REPORTER_ID, user_name: "서버 사용자", avatar_url: PROFILE_AVATAR,
+  }), context()), 200);
+  assert.equal(database.comments[0].user_id, AUTH_USER_ID);
+  assert.equal(database.comments[0].is_anonymous, true);
+  assert.equal(database.comments[0].user_name, "익명");
+  assert.equal(json.data.user_name, "익명");
+  assert.equal(json.data.displayName, "익명");
+  assert.ok(!Object.hasOwn(json.data, "avatar_url"));
+  assert.ok(!Object.hasOwn(json.data, "nickname"));
+  assert.equal(json.data.is_anonymous, true);
+  assertNoAccountIdentity(json, { anonymous: true });
+  const publicJson = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(publicJson.comments[0].user_name, "익명");
+  assert.ok(!Object.hasOwn(publicJson.comments[0], "avatar_url"));
+  assert.ok(!Object.hasOwn(publicJson.comments[0], "nickname"));
+  assertNoAccountIdentity(publicJson, { anonymous: true });
+  assert.equal(calls.filter((call) => call.table === "profiles").length, 0);
+});
+
+test("anonymous reply retains parent relation, true user ID and anonymous public identity", async () => {
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, parent_id: null, is_hidden: false,
+    user_id: null, user_name: "익명 유저", text: "기존 의견" });
+  const json = await responseJson(await comments.POST(request("POST", { text: "익명 답글", parentId: COMMENT_ID, isAnonymous: true }), context()), 200);
+  assert.equal(database.comments[1].user_id, AUTH_USER_ID);
+  assert.equal(database.comments[1].is_anonymous, true);
+  assert.equal(json.data.parent_id, COMMENT_ID);
+  assert.equal(json.data.user_name, "익명");
+  assertNoAccountIdentity(json, { anonymous: true });
+});
+
+test("public comment projection ignores stored OAuth names for account rows and preserves legacy names", async () => {
+  database.comments.push(
+    { id: COMMENT_ID, poll_id: POLL_ID, parent_id: null, is_hidden: false, is_anonymous: false,
+      user_id: AUTH_USER_ID, user_name: "서버 사용자", text: "계정 의견", created_at: "2026-10-01" },
+    { id: REPLY_ID, poll_id: POLL_ID, parent_id: COMMENT_ID, is_hidden: false, is_anonymous: false,
+      user_id: null, user_name: "예전 익명 유저", text: "기존 답글", created_at: "2026-10-02" },
+  );
+  const json = await responseJson(await detail.GET(request(), context()), 200);
+  const member = json.comments.find((row) => row.id === COMMENT_ID);
+  const legacy = json.comments.find((row) => row.id === REPLY_ID);
+  assert.equal(member.user_name, PROFILE_NICKNAME);
+  assert.equal(member.avatar_url, PROFILE_AVATAR);
+  assert.equal(legacy.user_name, "예전 익명 유저");
+  assert.ok(!Object.hasOwn(legacy, "avatar_url"));
+  assert.ok(!Object.hasOwn(legacy, "nickname"));
+  assertNoAccountIdentity(json);
+  assert.ok(calls.filter((call) => call.table === "profiles").every((call) => call.role === "service"));
+});
+
+test("public anonymous rows suppress even stale stored nickname/avatar and hidden authors", async () => {
+  database.comments.push(
+    { id: COMMENT_ID, poll_id: POLL_ID, parent_id: null, is_hidden: false, is_anonymous: true,
+      user_id: AUTH_USER_ID, user_name: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR,
+      text: "공개 익명 의견", created_at: "2026-10-01" },
+    { id: REPLY_ID, poll_id: POLL_ID, parent_id: COMMENT_ID, is_hidden: true, is_anonymous: false,
+      user_id: AUTH_USER_ID, user_name: PROFILE_NICKNAME, text: PRIVATE_TEXT, created_at: "2026-10-02" },
+  );
+  const json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(json.comments[0].user_name, "익명");
+  assert.ok(!Object.hasOwn(json.comments[0], "avatar_url"));
+  assert.ok(!Object.hasOwn(json.comments[0], "nickname"));
+  assertNoAccountIdentity(json, { anonymous: true });
+  assert.equal(calls.filter((call) => call.table === "profiles").length, 0);
+});
+
+test("final moderation recheck redacts comment hidden during public profile lookup", async () => {
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, parent_id: null, is_hidden: false,
+    is_anonymous: false, user_id: AUTH_USER_ID, user_name: PROFILE_NICKNAME,
+    text: PRIVATE_TEXT, created_at: "2026-10-01" });
+  database.comment_reactions.push({ comment_id: COMMENT_ID, reaction: "like", user_fingerprint: "test-fingerprint" });
+  queryHook = (query) => {
+    if (query.role === "service" && query.table === "profiles") database.comments[0].is_hidden = true;
+  };
+  const json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(json.comments[0].is_hidden, true);
+  assert.equal(json.comments[0].text, "운영 정책에 따라 숨겨진 의견입니다.");
+  assert.equal(json.comments[0].user_name, "");
+  assert.equal(json.comments[0].like_count, 0);
+  assertNoAccountIdentity(json, { anonymous: true });
+  const profileCall = calls.findIndex((call) => call.table === "profiles");
+  const finalStateCall = calls.findLastIndex((call) => call.role === "service" && call.table === "comments");
+  assert.ok(profileCall >= 0 && finalStateCall > profileCall, "Visibility must be checked after awaited profile reads.");
+});
+
+test("comment anonymous flag requires a true JSON boolean instead of truthy strings", async () => {
+  for (const isAnonymous of ["true", "false", 1, 0, null, {}, []]) {
+    await responseJson(await comments.POST(request("POST", { text: "의견", isAnonymous }), context()), 400);
+  }
+  assert.equal(calls.filter((call) => call.insert).length, 0);
+});
+
+test("anonymous poll creation stores verified author without changing owner or voter model", async () => {
+  const before = JSON.stringify(database.polls[0]);
+  const json = await responseJson(await list.POST(request("POST", {
+    ...createBody, isAnonymous: true, author_user_id: REPORTER_ID, userId: REPORTER_ID,
+  })), 200);
+  const created = database.polls.find((row) => row.id === json.data.id);
+  assert.equal(created.author_user_id, AUTH_USER_ID);
+  assert.equal(created.is_anonymous, true);
+  assert.deepEqual(created.votes, [0, 0]);
+  assert.equal(created.participants, 0);
+  assert.equal(database.poll_votes.length, 0);
+  assert.ok(json.data.ownerToken);
+  assert.ok(!JSON.stringify(json.data).includes(AUTH_USER_ID));
+  assert.equal(JSON.stringify(database.polls[0]), before);
+});
+
+test("multipart poll anonymous flag supports explicit true/false with existing image pipeline", async () => {
+  for (const isAnonymous of ["true", "false"]) {
+    const form = new FormData();
+    form.set("title", createBody.title);
+    form.set("category", createBody.category);
+    form.set("options", JSON.stringify(createBody.options));
+    form.set("isAnonymous", isAnonymous);
+    form.set("optionImages[0]", new File([Buffer.from("fixture")], "fixture.png", { type: "image/png" }));
+    const json = await responseJson(await list.POST(request("POST", form)), 200);
+    const call = calls.filter((row) => row.rpc === "create_owned_poll_with_author").at(-1);
+    assert.equal(call.payload.p_author_user_id, AUTH_USER_ID);
+    assert.equal(call.payload.p_is_anonymous, isAnonymous === "true");
+    assert.deepEqual(call.payload.p_option_image_paths, [NEW_PATH, null]);
+    assert.deepEqual(call.payload.p_votes, [0, 0]);
+    assert.ok(json.data.ownerToken);
+  }
+  assert.deepEqual(cleanedPaths, []);
+});
+
+test("poll anonymous validation rejects nonbooleans and invalid multipart values before creation", async () => {
+  for (const isAnonymous of ["true", "false", 1, null, {}]) {
+    await responseJson(await list.POST(request("POST", { ...createBody, isAnonymous })), 400);
+  }
+  for (const value of ["1", "TRUE", "", "yes"]) {
+    const form = new FormData();
+    form.set("title", createBody.title);
+    form.set("category", createBody.category);
+    form.set("options", JSON.stringify(createBody.options));
+    form.set("isAnonymous", value);
+    await responseJson(await list.POST(request("POST", form)), 400);
+  }
+  assert.equal(calls.filter((call) => call.rpc === "create_owned_poll_with_author").length, 0);
+});
+
+test("home and poll detail serialize no author account IDs for named or anonymous polls", async () => {
+  for (const isAnonymous of [true, false]) {
+    Object.assign(database.polls[0], { author_user_id: AUTH_USER_ID, is_anonymous: isAnonymous,
+      email: "member@example.invalid", user_metadata: { full_name: "서버 사용자" } });
+    const listJson = await responseJson(await list.GET(), 200);
+    const detailJson = await responseJson(await detail.GET(request(), context()), 200);
+    assertNoAccountIdentity(listJson);
+    assertNoAccountIdentity(detailJson);
+    assert.equal(detailJson.poll.is_anonymous, isAnonymous);
+  }
+  assert.ok(calls.filter((call) => call.role === "anon" && call.table === "polls")
+    .every((call) => call.fields !== "*" && !call.fields.includes("author_user_id")));
+});
+
+test("owner PATCH strips author identity from service RPC while preserving existing votes", async () => {
+  Object.assign(database.polls[0], { author_user_id: AUTH_USER_ID, is_anonymous: true,
+    votes: [8, 4], participants: 12 });
+  database.poll_votes.push({ poll_id: POLL_ID, voter_id: VOTER_ID, option_index: 0 });
+  const votesBefore = JSON.stringify(database.poll_votes);
+  const json = await responseJson(await detail.PATCH(request("PATCH", { description: "설명만 보정" }, { "x-poll-owner-token": OWNER_TOKEN }), context()), 200);
+  assertNoAccountIdentity(json);
+  assert.deepEqual(database.polls[0].votes, [8, 4]);
+  assert.equal(database.polls[0].participants, 12);
+  assert.equal(JSON.stringify(database.poll_votes), votesBefore);
+  assert.equal(database.polls[0].author_user_id, AUTH_USER_ID);
 });
 
 test("safe return path rejects external encoded/backslash/control and auth-loop targets", async () => {

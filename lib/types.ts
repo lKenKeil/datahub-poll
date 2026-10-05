@@ -45,6 +45,7 @@ export type DbPoll = {
   edit_lock_participants?: number | null;
   structural_edit_allowed?: boolean;
   structural_edit_lock_reason?: PollStructuralEditLockReason | null;
+  is_anonymous?: boolean;
 };
 
 export type OfficialStatistic = {
@@ -77,4 +78,8 @@ export type CommentRow = {
   like_count?: number;
   dislike_count?: number;
   user_reaction?: "like" | "dislike" | null;
+  is_anonymous?: boolean;
+  displayName?: string;
+  nickname?: string;
+  avatar_url?: string | null;
 };

@@ -32,6 +32,13 @@ import {
   getPollStructuralEditState,
   type PollEditLockMode,
 } from "@/lib/poll-edit-lock";
+import {
+  PUBLIC_POLL_COLUMNS,
+  PUBLIC_COMMENT_COLUMNS,
+  serializePublicPoll,
+  serializePublicComment,
+  type PublicProfileIdentity,
+} from "@/lib/public-identity";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -193,13 +200,20 @@ export async function GET(request: Request, context: Context) {
       );
     }
 
-    const [{ data: poll, error: pollError }, { data: comments, error: commentsError }] = await Promise.all([
-      supabaseServer.from("polls").select("*").eq("id", id).eq("is_hidden", false).maybeSingle(),
-      supabaseServer.from("comments").select("id,poll_id,parent_id,text,user_name,created_at,is_hidden").eq("poll_id", id)
+    const [
+      { data: poll, error: pollError },
+      { data: comments, error: commentsError },
+      { data: commentAuthors, error: commentAuthorsError },
+    ] = await Promise.all([
+      supabaseServer.from("polls").select(PUBLIC_POLL_COLUMNS).eq("id", id).eq("is_hidden", false).maybeSingle(),
+      supabaseServer.from("comments").select(PUBLIC_COMMENT_COLUMNS).eq("poll_id", id)
         .eq("is_hidden", false).order("created_at", { ascending: false }),
+      supabaseMutation.from("comments").select("id,user_id,is_anonymous")
+        .eq("poll_id", id).eq("is_hidden", false),
     ]);
     if (pollError) throw pollError;
     if (commentsError) throw commentsError;
+    if (commentAuthorsError) throw commentAuthorsError;
     if (!poll) return unavailable();
 
     let viewerVote: { optionIndex: number } | null = null;
@@ -241,18 +255,35 @@ export async function GET(request: Request, context: Context) {
       }
     }
 
-    // Recheck availability after the public reads. Privileged comment reads
-    // contain only identifiers and visibility, never hidden original content.
+    const visibleById = new Map(visibleComments.map((comment) => [String(comment.id), comment]));
+    const publicAuthorIds = [...new Set((commentAuthors ?? [])
+      .filter((author) => author.is_anonymous !== true && typeof author.user_id === "string"
+        && visibleById.has(String(author.id)))
+      .map((author) => String(author.user_id)))];
+    const authorProfiles = new Map<string, PublicProfileIdentity>();
+    if (publicAuthorIds.length > 0) {
+      const { data: profiles, error: profilesError } = await supabaseMutation
+        .from("profiles").select("id,nickname,avatar_url").in("id", publicAuthorIds);
+      if (profilesError) throw profilesError;
+      for (const profile of profiles ?? []) {
+        if (typeof profile.nickname === "string") authorProfiles.set(String(profile.id), profile);
+      }
+    }
+
+    // Recheck availability after public reads and profile lookup. No async
+    // work follows this boundary, keeping moderation races fail-closed.
+    // Privileged comment reads
+    // contain only identifiers, internal authorship and visibility, never
+    // hidden original content. No account identifier leaves this handler.
     const [{ data: currentPoll, error: currentPollError }, { data: commentStates, error: commentStatesError }] = await Promise.all([
       supabaseMutation.from("polls").select("id,is_hidden").eq("id", id).maybeSingle(),
-      supabaseMutation.from("comments").select("id,poll_id,parent_id,is_hidden")
+      supabaseMutation.from("comments").select("id,poll_id,parent_id,is_hidden,user_id,is_anonymous")
         .eq("poll_id", id).order("created_at", { ascending: false }),
     ]);
     if (currentPollError) throw currentPollError;
     if (commentStatesError) throw commentStatesError;
     if (!currentPoll || currentPoll.is_hidden) return unavailable();
 
-    const visibleById = new Map(visibleComments.map((comment) => [String(comment.id), comment]));
     const enriched = (commentStates ?? []).flatMap<Record<string, unknown>>((state) => {
       if (state.is_hidden) {
         return [{
@@ -265,14 +296,18 @@ export async function GET(request: Request, context: Context) {
       if (!original) return [];
       const counts = byComment.get(String(state.id));
       return [{
-        ...original, parent_id: state.parent_id ?? null, is_hidden: false,
+        ...serializePublicComment(
+          { ...original, parent_id: state.parent_id ?? null, is_anonymous: state.is_anonymous === true, is_hidden: false },
+          state.is_anonymous === true ? null : authorProfiles.get(String(state.user_id)) ?? null,
+          typeof state.user_id === "string",
+        ),
         like_count: counts?.like ?? 0, dislike_count: counts?.dislike ?? 0,
         user_reaction: counts?.userReaction ?? null,
       }];
     });
     return NextResponse.json({
       poll: {
-        ...poll,
+        ...serializePublicPoll(poll),
         ...getPollStructuralEditState(poll, (commentStates ?? []).length > 0, hasAnyVotes),
       },
       comments: enriched, viewerVote, reportable: true,
@@ -539,7 +574,7 @@ export async function PATCH(request: Request, context: Context) {
     }
 
     return NextResponse.json(
-      { ok: true, data: updatedPoll },
+      { ok: true, data: serializePublicPoll(updatedPoll) },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {

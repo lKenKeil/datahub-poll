@@ -25,6 +25,7 @@ import {
   type PollEditLockConfig,
 } from "@/lib/poll-edit-lock";
 import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/content-report-server";
+import { PUBLIC_POLL_COLUMNS, serializePublicPoll } from "@/lib/public-identity";
 
 const validCategories = new Set<PollCategory>(["학술/통계", "IT/테크", "사회/경제", "라이프스타일", "커뮤니티"]);
 const MAX_MULTIPART_REQUEST_BYTES = 4_400_000;
@@ -40,6 +41,7 @@ type PollCreateRequest = {
   options: unknown;
   officialFact: unknown;
   editLock: unknown;
+  isAnonymous: unknown;
   optionImages: Map<number, File>;
 };
 
@@ -121,6 +123,7 @@ async function parsePollCreateRequest(request: Request): Promise<PollCreateReque
       options: raw.options,
       officialFact,
       editLock: raw.editLock,
+      isAnonymous: raw.isAnonymous,
       optionImages: new Map(),
     };
   }
@@ -152,6 +155,7 @@ async function parsePollCreateRequest(request: Request): Promise<PollCreateReque
     "official_fact",
     "description",
     "editLock",
+    "isAnonymous",
   ]);
   const optionImages = new Map<number, File>();
   let approximateBodyBytes = 0;
@@ -202,12 +206,18 @@ async function parsePollCreateRequest(request: Request): Promise<PollCreateReque
     }
   }
 
+  const anonymousText = getOneFormString(formData, "isAnonymous", false);
+  if (anonymousText !== undefined && anonymousText !== "true" && anonymousText !== "false") {
+    throw new PollCreateRequestError("isAnonymous must be a boolean.");
+  }
+
   return {
     title: getOneFormString(formData, "title"),
     category: getOneFormString(formData, "category"),
     options,
     officialFact: getMultipartOfficialFact(formData),
     editLock,
+    isAnonymous: anonymousText === "true",
     optionImages,
   };
 }
@@ -216,7 +226,7 @@ export async function GET() {
   try {
     const { data, error } = await supabaseServer
       .from("polls")
-      .select("*")
+      .select(PUBLIC_POLL_COLUMNS)
       .eq("is_hidden", false)
       .order("created_at", { ascending: false });
 
@@ -252,7 +262,7 @@ export async function GET() {
       ...(deletedOfficialPolls ?? []).map((poll) => String(poll.poll_id)),
     ]);
     return NextResponse.json({
-      data: (data ?? []).filter((poll) => !unavailableIds.has(String(poll.id))),
+      data: (data ?? []).filter((poll) => !unavailableIds.has(String(poll.id))).map(serializePublicPoll),
       unavailableOfficialPollIds: [...unavailableIds].filter((id) => id.startsWith("official_")),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -276,6 +286,9 @@ export async function POST(request: Request) {
     const auth = await requireAuthenticatedUser(request);
     if (auth.response) return auth.response;
     const raw = await parsePollCreateRequest(request);
+    if (raw.isAnonymous !== undefined && typeof raw.isAnonymous !== "boolean") {
+      return NextResponse.json({ error: "isAnonymous must be a boolean." }, { status: 400 });
+    }
 
     const rawTitleInput = typeof raw?.title === "string" ? raw.title : "";
     const rawOptionInputs = Array.isArray(raw?.options) && raw.options.every((value) => typeof value === "string")
@@ -385,7 +398,7 @@ export async function POST(request: Request) {
       insertPayload.option_image_paths = optionImagePaths;
     }
 
-    const { error } = await supabaseMutation.rpc("create_owned_poll", {
+    const { error } = await supabaseMutation.rpc("create_owned_poll_with_author", {
       p_poll_id: id,
       p_title: rawTitle,
       p_category: rawCategory,
@@ -398,6 +411,8 @@ export async function POST(request: Request) {
       p_edit_lock_mode: editLock.mode,
       p_edit_lock_minutes: editLock.minutes,
       p_edit_lock_participants: editLock.participants,
+      p_author_user_id: auth.user.id,
+      p_is_anonymous: raw.isAnonymous === true,
     });
 
     if (error) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAuthenticatedUser } from "@/lib/auth-server";
-import { getAuthDisplayName } from "@/lib/auth-display";
+import { accountErrorResponse, ensureAccountProfile } from "@/lib/profile-server";
+import { serializePublicComment } from "@/lib/public-identity";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import {
@@ -17,6 +18,7 @@ type Context = { params: Promise<{ id: string }> };
 type CommentBody = {
   text?: unknown;
   parentId?: unknown;
+  isAnonymous?: unknown;
 };
 
 export async function POST(request: Request, context: Context) {
@@ -40,6 +42,10 @@ export async function POST(request: Request, context: Context) {
 
     if (typeof body?.text !== "string") {
       return NextResponse.json({ error: "comment text is required." }, { status: 400 });
+    }
+
+    if (body.isAnonymous !== undefined && typeof body.isAnonymous !== "boolean") {
+      return NextResponse.json({ error: "isAnonymous must be a boolean." }, { status: 400 });
     }
 
     if (body.parentId !== undefined && body.parentId !== null && typeof body.parentId !== "string") {
@@ -100,11 +106,15 @@ export async function POST(request: Request, context: Context) {
       }
     }
 
+    const isAnonymous = body.isAnonymous === true;
+    // Anonymous authors are still authenticated; public identity is masked only.
+    const profile = isAnonymous ? null : await ensureAccountProfile(supabaseMutation, auth.user.id);
     const insertPayload: Record<string, unknown> = {
       poll_id: id,
       text,
-      user_name: getAuthDisplayName(auth.user),
+      user_name: isAnonymous ? "익명" : profile!.nickname,
       user_id: auth.user.id,
+      is_anonymous: isAnonymous,
     };
 
     if (parentId) {
@@ -114,7 +124,7 @@ export async function POST(request: Request, context: Context) {
     const { data, error } = await supabaseMutation
       .from("comments")
       .insert(insertPayload)
-      .select("id,poll_id,parent_id,text,user_name,created_at")
+      .select("id,poll_id,parent_id,text,user_name,created_at,is_anonymous")
       .single();
 
     if (error) {
@@ -126,9 +136,10 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
-    return NextResponse.json({ data }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({
+      data: serializePublicComment({ ...data, is_anonymous: isAnonymous }, profile, true),
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
-    logPublicMutationError("comment-create-unexpected", error);
-    return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
+    return accountErrorResponse(error, "comment-create-unexpected");
   }
 }

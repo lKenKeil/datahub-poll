@@ -133,6 +133,7 @@ export default function CreatePollPage() {
   const [ownerTokenCopyMessage, setOwnerTokenCopyMessage] = useState('');
   const [editLockPreset, setEditLockPreset] = useState<EditLockPreset>('first_vote');
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [isAnonymous, setIsAnonymous] = useState(false);
 
   const trimmedTitle = title.trim();
   const titleLength = getUnicodeCodePointLength(title);
@@ -372,6 +373,7 @@ export default function CreatePollPage() {
         formData.append('category', selectedCategory.dbValue);
         formData.append('options', JSON.stringify(trimmedOptions));
         formData.append('editLock', JSON.stringify(selectedEditLock.config));
+        formData.append('isAnonymous', String(isAnonymous));
         if (description.trim()) formData.append('officialFact', description.trim());
         options.forEach((option, index) => {
           if (option.imageFile) formData.append(`optionImages[${index}]`, option.imageFile);
@@ -383,6 +385,7 @@ export default function CreatePollPage() {
           category: selectedCategory.dbValue,
           options: trimmedOptions,
           editLock: selectedEditLock.config,
+          isAnonymous,
         };
         if (description.trim()) payload.official_fact = description.trim();
         requestInit = {
@@ -714,6 +717,22 @@ export default function CreatePollPage() {
               />
               <p className="mt-2 text-right text-xs font-semibold text-muted">{getUnicodeCodePointLength(description)}/{MAX_DESCRIPTION_LENGTH}</p>
             </section>
+
+            <div className="rounded-2xl border border-line bg-surface px-4 py-2 sm:px-5">
+              <label htmlFor="poll-anonymous" className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold text-ink">
+                <input
+                  id="poll-anonymous"
+                  type="checkbox"
+                  checked={isAnonymous}
+                  onChange={(event) => setIsAnonymous(event.target.checked)}
+                  disabled={isSubmitting}
+                  aria-describedby="poll-anonymous-help"
+                  className="h-4 w-4 shrink-0 accent-blue-600"
+                />
+                익명으로 올리기
+              </label>
+              <p id="poll-anonymous-help" className="pb-2 text-xs leading-relaxed text-muted">익명으로 올려도 작성 권한과 관리 권한은 그대로 유지돼요.</p>
+            </div>
 
             <details className="group rounded-2xl border border-line bg-surface p-4 dark:border-line dark:bg-surface sm:p-5">
               <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30">
