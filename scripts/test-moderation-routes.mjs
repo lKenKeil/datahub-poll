@@ -109,6 +109,7 @@ function supabaseClient(role) {
       const chain = {
         select(fields) { query.fields = fields; return chain; },
         eq(field, value) { query.equals.push([field, value]); return chain; },
+        is(field, value) { query.equals.push([field, value]); return chain; },
         in(field, values) { query.equals.push([field, values]); return chain; },
         order() { return chain; },
         limit(value) { query.limit = value; return chain; },
@@ -142,7 +143,7 @@ function supabaseClient(role) {
             let rows = query.insert ? database.comments.slice(-1)
               : role === "anon" ? publicRows(table) : database[table] ?? [];
             rows = rows.filter((row) => query.equals.every(([field, value]) =>
-              Array.isArray(value) ? value.includes(row[field]) : row[field] === value));
+              Array.isArray(value) ? value.includes(row[field]) : value === null ? row[field] == null : row[field] === value));
             rows = rows.slice(0, query.limit).map((row) => query.fields === "*" ? { ...row }
               : Object.fromEntries(query.fields.split(",").map((field) => [field, row[field]])));
             return { data: query.single ? rows[0] ?? null : rows, error: null };
@@ -212,6 +213,36 @@ function supabaseClient(role) {
         vote.option_index = index;
         poll.votes[index] += 1;
         return { data: { id: poll.id, votes: [...poll.votes], participants: poll.participants, option_index: index, changed }, error: null };
+      }
+      // Contract model only: real SQL locking/atomicity is tested separately.
+      if (["cast_authenticated_poll_vote", "change_authenticated_poll_vote", "claim_authenticated_poll_vote"].includes(name)) {
+        assert.equal(role, "service");
+        assert.ok(payload.p_user_id);
+        const poll = database.polls.find(row => row.id === payload.p_poll_id);
+        if (!poll || poll.is_hidden) return { data: null, error: { code: "P0002", message: "CONTENT_NOT_AVAILABLE" } };
+        let vote = database.poll_votes.find(row => row.poll_id === poll.id && row.user_id === payload.p_user_id);
+        if (name === "claim_authenticated_poll_vote") {
+          if (!vote) {
+            vote = database.poll_votes.find(row => row.poll_id === poll.id && row.voter_id === payload.p_legacy_voter_id && row.user_id == null);
+            if (vote) vote.user_id = payload.p_user_id;
+          }
+          return { data: vote ? [{ id: poll.id, votes: [...poll.votes], participants: poll.participants, option_index: vote.option_index }] : [], error: null };
+        }
+        if (name === "cast_authenticated_poll_vote" && vote) return { data: null, error: { code: "23505", message: "ALREADY_VOTED" } };
+        if (name === "change_authenticated_poll_vote" && !vote) return { data: null, error: { code: "P0002", message: "Existing vote not found." } };
+        const index = payload.p_option_index ?? payload.p_new_option_index;
+        const changed = !vote || vote.option_index !== index;
+        if (changed) {
+          if (vote) poll.votes[vote.option_index] -= 1;
+          else {
+            vote = { id: database.poll_votes.length + 1, poll_id: poll.id, user_id: payload.p_user_id, voter_id: `mock-server-ledger-${database.poll_votes.length + 1}` };
+            database.poll_votes.push(vote);
+            poll.participants += 1;
+          }
+          vote.option_index = index;
+          poll.votes[index] += 1;
+        }
+        return { data: [{ id: poll.id, votes: [...poll.votes], participants: poll.participants, option_index: index, changed }], error: null };
       }
       if (name === "submit_content_report") {
         const key = `${payload.p_target_type}:${payload.p_target_id}:${payload.p_reporter_hash}`;
@@ -353,6 +384,7 @@ function test(name, run) { tests.push({ name, run }); }
 const detail = loadModule("app/api/polls/[id]/route.ts");
 const list = loadModule("app/api/polls/route.ts");
 const votes = loadModule("app/api/polls/[id]/vote/route.ts");
+const voteClaim = loadModule("app/api/polls/[id]/vote/claim/route.ts");
 const comments = loadModule("app/api/polls/[id]/comments/route.ts");
 const reactions = loadModule("app/api/comments/[id]/react/route.ts");
 const avatars = loadModule('app/api/profile/avatar/route.ts');
@@ -953,16 +985,16 @@ test("logout preserves old authorship while new comments become separate guest a
   assert.ok(database.comments[1].guest_id_hash);
 });
 
-test("anonymous voting/change/duplicate protection still use existing voter RPCs", async () => {
+test("anonymous voting/change require a verified account despite voter identity", async () => {
   authUser = null;
   const voteBody = { optionIndex: 0, voterId: VOTER_ID };
-  await responseJson(await votes.POST(request("POST", voteBody), context()), 200);
-  await responseJson(await votes.POST(request("POST", voteBody), context()), 409);
-  await responseJson(await votes.PATCH(request("PATCH", { ...voteBody, optionIndex: 1 }), context()), 200);
-  assert.deepEqual(database.polls[0].votes, [0, 1]);
-  assert.equal(database.polls[0].participants, 1);
-  assert.equal(database.poll_votes.length, 1);
-  assert.ok(calls.filter((call) => call.rpc).every((call) => call.payload.p_voter_id === VOTER_ID));
+  await responseJson(await votes.POST(request("POST", voteBody), context()), 401);
+  await responseJson(await votes.PATCH(request("PATCH", { ...voteBody, optionIndex: 1 }), context()), 401);
+  await responseJson(await voteClaim.POST(request("POST", { voterId: VOTER_ID }), context()), 401);
+  assert.deepEqual(database.polls[0].votes, [0, 0]);
+  assert.equal(database.polls[0].participants, 0);
+  assert.equal(database.poll_votes.length, 0);
+  assert.equal(calls.filter(call => call.rpc).length, 0);
 });
 
 test("anonymous reporting remains available independently of Auth", async () => {
@@ -1576,6 +1608,150 @@ test('default image preserves prior opt-in and still permits nickname save', asy
   const json = await responseJson(await profileRoute.PATCH(request('PATCH', { nickname: PROFILE_NICKNAME, showAvatar: true })), 200);
   assert.equal(json.data.show_avatar, true);
   assert.equal(json.data.avatar_url, null);
+});
+
+test('account voting ignores spoofed identity and uses verified user for all providers', async () => {
+  for (const provider of ['google', 'kakao', 'email']) {
+    reset();
+    authUser.app_metadata = { provider };
+    const json = await responseJson(await votes.POST(request('POST', { optionIndex: 0, user_id: OTHER_REPORTER_ID, voterId: VOTER_ID }), context()), 200);
+    const call = calls.find(row => row.rpc === 'cast_authenticated_poll_vote');
+    assert.equal(call.payload.p_user_id, AUTH_USER_ID);
+    assert.equal(call.payload.p_voter_id, undefined);
+    assertNoAccountIdentity(json);
+    assert.ok(!JSON.stringify(json).includes(VOTER_ID));
+    assert.deepEqual(database.polls[0].votes, [1, 0]);
+  }
+});
+
+test('anonymous Auth sessions and failed verification cannot cast or change votes', async () => {
+  for (const scenario of ['anonymous', 'error', 'throw']) {
+    reset();
+    if (scenario === 'anonymous') authUser.is_anonymous = true;
+    if (scenario === 'error') authFailure = { message: RAW_ERROR };
+    if (scenario === 'throw') authThrows = true;
+    assertNoSecrets(await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 401));
+    await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }), context()), 401);
+    assert.equal(calls.filter(row => row.rpc).length, 0);
+  }
+});
+
+test('same account across simulated browser identities has one row and persistent viewer vote', async () => {
+  const json = await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 200);
+  assert.equal(json.data.optionIndex, 0);
+  const seen = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': OTHER_REPORTER_ID }), context()), 200);
+  assert.deepEqual(seen.viewerVote, { optionIndex: 0 });
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1, voterId: OTHER_REPORTER_ID }), context()), 409);
+  assert.equal(database.poll_votes.length, 1);
+  assert.deepEqual(database.polls[0].votes, [1, 0]);
+  assert.equal(database.polls[0].participants, 1);
+  assertNoAccountIdentity(seen);
+});
+
+test('simultaneous API requests retain one vote in the mocked RPC contract', async () => {
+  const responses = await Promise.all([0, 1].map(optionIndex => votes.POST(request('POST', { optionIndex }), context())));
+  assert.deepEqual(responses.map(row => row.status).sort(), [200, 409]);
+  assert.equal(database.poll_votes.length, 1);
+  assert.equal(database.polls[0].participants, 1);
+  assert.equal(database.polls[0].votes.reduce((sum, value) => sum + value, 0), 1);
+});
+
+test('account change moves only its count and same option is a no-op', async () => {
+  database.polls[0].votes = [8, 4];
+  database.polls[0].participants = 12;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 200);
+  const before = database.poll_votes[0].id;
+  const changed = await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }), context()), 200);
+  assert.equal(changed.data.changed, true);
+  assert.deepEqual(database.polls[0].votes, [8, 5]);
+  assert.equal(database.polls[0].participants, 13);
+  assert.equal(database.poll_votes[0].id, before);
+  const repeated = await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }), context()), 200);
+  assert.equal(repeated.data.changed, false);
+  assert.deepEqual(database.polls[0].votes, [8, 5]);
+  assert.equal(database.poll_votes.length, 1);
+});
+
+test('legacy claim attaches the same ledger row without aggregate changes', async () => {
+  database.polls[0].votes = [9, 4];
+  database.polls[0].participants = 13;
+  database.poll_votes.push({ id: 24, poll_id: POLL_ID, voter_id: VOTER_ID, user_id: null, option_index: 0, created_at: '2026-09-01' });
+  const json = await responseJson(await voteClaim.POST(request('POST', { voterId: VOTER_ID }), context()), 200);
+  assert.equal(json.data.optionIndex, 0);
+  assert.equal(database.poll_votes[0].id, 24);
+  assert.equal(database.poll_votes[0].user_id, AUTH_USER_ID);
+  assert.equal(database.poll_votes[0].created_at, '2026-09-01');
+  assert.deepEqual(database.polls[0].votes, [9, 4]);
+  assert.equal(database.polls[0].participants, 13);
+  assert.equal(database.poll_votes.length, 1);
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }), context()), 409);
+  assertNoAccountIdentity(json);
+});
+
+test('legacy conflict prefers account vote, preserves both historical rows, and adds no third', async () => {
+  database.polls[0].votes = [8, 4];
+  database.polls[0].participants = 12;
+  database.poll_votes.push(
+    { id: 1, poll_id: POLL_ID, voter_id: VOTER_ID, user_id: null, option_index: 0 },
+    { id: 2, poll_id: POLL_ID, voter_id: OTHER_REPORTER_ID, user_id: AUTH_USER_ID, option_index: 1 },
+  );
+  const before = JSON.stringify(database.poll_votes);
+  const claimed = await responseJson(await voteClaim.POST(request('POST', { voterId: VOTER_ID }), context()), 200);
+  assert.equal(claimed.data.optionIndex, 1);
+  const seen = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context()), 200);
+  assert.equal(seen.viewerVote.optionIndex, 1);
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 409);
+  assert.equal(JSON.stringify(database.poll_votes), before);
+  assert.deepEqual(database.polls[0].votes, [8, 4]);
+});
+
+test('GET preserves only unclaimed legacy result and never mutates or leaks ledger identity', async () => {
+  authUser = null;
+  database.poll_votes.push({ poll_id: POLL_ID, voter_id: VOTER_ID, user_id: null, option_index: 1 });
+  const first = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context()), 200);
+  assert.deepEqual(first.viewerVote, { optionIndex: 1 });
+  assert.equal(calls.filter(row => row.rpc).length, 0);
+  database.poll_votes[0].user_id = AUTH_USER_ID;
+  const after = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context()), 200);
+  assert.equal(after.viewerVote, null);
+  assertNoAccountIdentity(first); assertNoAccountIdentity(after);
+  assert.ok(!JSON.stringify(first).includes(VOTER_ID));
+});
+
+test('claim cannot steal another account row or attach nonexistent legacy vote', async () => {
+  database.poll_votes.push({ poll_id: POLL_ID, voter_id: VOTER_ID, user_id: OTHER_REPORTER_ID, option_index: 0 });
+  const before = JSON.stringify(database.poll_votes);
+  const result = await responseJson(await voteClaim.POST(request('POST', { voterId: VOTER_ID }), context()), 200);
+  assert.equal(result.data, null);
+  assert.equal(JSON.stringify(database.poll_votes), before);
+  const noRow = await responseJson(await voteClaim.POST(request('POST', { voterId: REPORTER_ID }), context()), 200);
+  assert.equal(noRow.data, null);
+});
+
+test('account mutations reject cross-site requests and invalid claims without RPC', async () => {
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { origin: 'https://evil.invalid' }), context()), 403);
+  await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 0 }, { 'sec-fetch-site': 'cross-site' }), context()), 403);
+  await responseJson(await voteClaim.POST(request('POST', { voterId: 'not-a-uuid' }), context()), 400);
+  assert.equal(calls.filter(row => row.rpc).length, 0);
+});
+
+test('missing account migration and raw vote/claim errors remain safe', async () => {
+  rpcFailure = { code: 'PGRST202', message: `cast_authenticated_poll_vote ${RAW_ERROR}` };
+  const missing = await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 503);
+  assert.equal(missing.code, 'ACCOUNT_VOTING_MIGRATION_REQUIRED');
+  assertNoSecrets(missing);
+  rpcFailure = { code: 'PGRST202', message: `claim_authenticated_poll_vote ${RAW_ERROR}` };
+  assertNoSecrets(await responseJson(await voteClaim.POST(request('POST', { voterId: VOTER_ID }), context()), 503));
+  rpcFailure = { code: 'XX000', message: RAW_ERROR };
+  assertNoSecrets(await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 500));
+  assertNoSecrets(await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 0 }), context()), 500));
+  assertNoSecrets(await responseJson(await voteClaim.POST(request('POST', { voterId: VOTER_ID }), context()), 500));
+});
+
+test('account API responses are private and noncacheable', async () => {
+  const created = await votes.POST(request('POST', { optionIndex: 0 }), context());
+  const viewed = await detail.GET(request(), context());
+  for (const response of [created, viewed]) assert.match(response.headers.get('cache-control'), /private.*no-store/);
 });
 
 let failed = 0;

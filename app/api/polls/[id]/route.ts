@@ -3,6 +3,11 @@ import { POLLS } from "@/data/polls";
 import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/content-report-server";
 import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server";
 import { isValidVoterId } from "@/lib/voter-id";
+import {
+  accountVotingMigrationResponse,
+  isAccountVotingMigrationMissing,
+  withPrivateVoteHeaders,
+} from "@/lib/poll-vote-server";
 import { getCommentReactionActor } from '@/lib/comment-reaction-identity';
 import { CommentIdentityUnavailable } from '@/lib/comment-identity';
 import { parseCommentSort, sortComments } from '@/lib/comment-sorting';
@@ -160,7 +165,7 @@ function validateRetainedImagePaths(
 }
 
 export async function GET(request: Request, context: Context) {
-  const headers = { "Cache-Control": "no-store" };
+  const headers = { "Cache-Control": "private, no-store" };
   const unavailable = () => NextResponse.json(
     { error: "질문을 찾을 수 없습니다.", unavailable: true },
     { status: 404, headers },
@@ -175,6 +180,13 @@ export async function GET(request: Request, context: Context) {
     let reactionActor: string | null = null;
     try { reactionActor = (await getCommentReactionActor(request)).key; }
     catch (error) { if (!(error instanceof CommentIdentityUnavailable)) throw error; }
+    // The account key is created only from requireAuthenticatedUser/getUser,
+    // never from a request header, body or guest identity. Reuse that verified
+    // user for the viewer lookup without another Auth network request.
+    const authenticatedActorId = reactionActor?.startsWith("account:")
+      ? reactionActor.slice("account:".length)
+      : null;
+    const viewerUserId = isValidVoterId(authenticatedActorId) ? authenticatedActorId : null;
     const voterId = request.headers.get("x-voter-id")?.trim().toLowerCase() ?? "";
     if (voterId && !isValidVoterId(voterId)) {
       return NextResponse.json({ error: "invalid voter id." }, { status: 400, headers });
@@ -224,10 +236,22 @@ export async function GET(request: Request, context: Context) {
 
     let viewerVote: { optionIndex: number } | null = null;
     let hasAnyVotes = Number(poll.participants) > 0;
-    if (voterId) {
+    if (viewerUserId) {
+      const { data: accountVote, error: accountVoteError } = await supabaseMutation
+        .from("poll_votes").select("option_index").eq("poll_id", id)
+        .eq("user_id", viewerUserId).maybeSingle();
+      if (accountVoteError) throw accountVoteError;
+      if (accountVote && Number.isInteger(accountVote.option_index)) {
+        viewerVote = { optionIndex: accountVote.option_index };
+      }
+    }
+    // Keep historical result access for an unclaimed browser vote, but never
+    // reveal another account's vote through a copied legacy browser ID. This
+    // GET stays read-only; authenticated claim is an explicit POST endpoint.
+    if (!viewerVote && voterId) {
       const { data: vote, error: voteError } = await supabaseMutation
         .from("poll_votes").select("option_index").eq("poll_id", id)
-        .eq("voter_id", voterId).maybeSingle();
+        .eq("voter_id", voterId).is("user_id", null).maybeSingle();
       if (voteError) throw voteError;
       if (vote && Number.isInteger(vote.option_index)) {
         viewerVote = { optionIndex: vote.option_index };
@@ -319,7 +343,8 @@ export async function GET(request: Request, context: Context) {
       comments: sortComments(enriched as Array<Record<string, unknown> & { id: unknown }>, parseCommentSort(new URL(request.url).searchParams.get('comments'))), viewerVote, reportable: true,
     }, { headers });
   } catch (error) {
-    if (isModerationMigrationMissing(error)) return moderationErrorResponse(error, "poll-detail-read");
+    if (isAccountVotingMigrationMissing(error)) return accountVotingMigrationResponse();
+    if (isModerationMigrationMissing(error)) return withPrivateVoteHeaders(moderationErrorResponse(error, "poll-detail-read"));
     logPublicMutationError("poll-detail-read", error);
     return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500, headers });
   }
