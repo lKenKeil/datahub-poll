@@ -6,6 +6,9 @@ export type AccountProfile = {
   avatar_url: string | null;
   onboarding_completed: boolean;
   show_avatar: boolean;
+  avatar_source?: 'default' | 'social' | 'uploaded';
+  social_avatar_url?: string | null;
+  uploaded_avatar_url?: string | null;
 };
 
 export function getSafeAvatarUrl(value: unknown): string | null {
@@ -28,5 +31,8 @@ export function parseAccountProfile(value: unknown): AccountProfile | null {
     avatar_url: getSafeAvatarUrl(raw.avatar_url),
     onboarding_completed: raw.onboarding_completed,
     show_avatar: raw.show_avatar === true,
+    avatar_source: raw.avatar_source === 'default' || raw.avatar_source === 'uploaded' ? raw.avatar_source : 'social',
+    social_avatar_url: getSafeAvatarUrl(raw.social_avatar_url) ?? (raw.avatar_source !== 'uploaded' && raw.avatar_source !== 'default' ? getSafeAvatarUrl(raw.avatar_url) : null),
+    uploaded_avatar_url: getSafeAvatarUrl(raw.uploaded_avatar_url),
   };
 }

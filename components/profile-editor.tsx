@@ -3,7 +3,7 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '@/components/auth-provider';
 import { parseAccountProfile, type AccountProfile } from '@/lib/profile';
-import { ProfileAvatar } from '@/components/profile-avatar';
+import { ProfileAvatarEditor } from '@/components/profile-avatar-editor';
 
 export function ProfileEditor({ profile, onboarding = false, onComplete }: {
   profile: AccountProfile; onboarding?: boolean; onComplete?: () => void;
@@ -53,12 +53,11 @@ export function ProfileEditor({ profile, onboarding = false, onComplete }: {
   const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); void changeProfile(false); };
   return (
     <form onSubmit={submit} className="space-y-4" aria-busy={pending}>
-      {!onboarding ? <fieldset className="space-y-2">
-        <legend className="mb-2 text-sm font-bold">프로필 사진</legend>
-        <div className="flex items-center gap-3"><ProfileAvatar name={nickname} url={showAvatar ? profile.avatar_url : null} size={40} /><p className="text-xs leading-relaxed text-muted">소셜 사진은 선택한 경우에만 일반 의견에 공개돼요.</p></div>
-        <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm"><input type="radio" name={`${id}-avatar`} checked={!showAvatar} disabled={pending} onChange={() => setShowAvatar(false)} />기본 Askio 아바타</label>
-        {profile.avatar_url ? <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm"><input type="radio" name={`${id}-avatar`} checked={showAvatar} disabled={pending} onChange={() => setShowAvatar(true)} />소셜 프로필 사진 사용</label> : null}
-      </fieldset> : null}
+      {!onboarding ? <div className="space-y-2">
+        <ProfileAvatarEditor profile={profile} disabled={pending} />
+        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={showAvatar} disabled={pending || (!profile.avatar_url && !showAvatar)} onChange={event => setShowAvatar(event.target.checked)} />일반 의견에 선택한 사진 공개</label>
+        <p className="text-xs leading-relaxed text-muted">아래 저장 버튼으로 공개 설정을 적용해요. 익명 의견에는 사진이 표시되지 않아요.</p>
+      </div> : null}
       <div>
         <label htmlFor={id} className="mb-2 block text-sm font-bold">닉네임</label>
         <input ref={input} id={id} type="text" value={nickname} onChange={(event) => setNickname(event.target.value)} autoComplete="nickname" minLength={2} maxLength={16} required disabled={pending} aria-describedby={`${id}-help`} className="min-h-11 w-full min-w-0 rounded-xl border border-line bg-surface px-3 py-2 text-base text-ink" />

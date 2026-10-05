@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireAuthenticatedUser } from "@/lib/auth-server";
+import { getCommentReactionActor } from '@/lib/comment-reaction-identity';
+import { CommentIdentityUnavailable, setGuestCommentCookie } from '@/lib/comment-identity';
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
 import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import { normalizeReportTarget, moderationErrorResponse } from "@/lib/content-report-server";
 import {
-  getUnsafeTextInputMessage,
   hasUnsafeInputControlCharacters,
   logPublicMutationError,
   PUBLIC_INTERNAL_ERROR_MESSAGE,
@@ -13,7 +13,6 @@ import {
 type Context = { params: Promise<{ id: string }> };
 
 type ReactionBody = {
-  userFingerprint?: unknown;
   reaction?: unknown;
 };
 
@@ -22,8 +21,8 @@ export async function POST(request: Request, context: Context) {
   if (rateLimitResponse) return rateLimitResponse;
 
   try {
-    const auth = await requireAuthenticatedUser(request);
-    if (auth.response) return auth.response;
+    const actor = await getCommentReactionActor(request);
+    if (actor.response) return actor.response;
     const { id } = await context.params;
     if (!normalizeReportTarget("comment", id) || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid comment id." }, { status: 400 });
@@ -36,21 +35,8 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: "invalid JSON body." }, { status: 400 });
     }
 
-    const rawUserFingerprint = typeof body.userFingerprint === "string" ? body.userFingerprint : "";
-    const unsafeInputMessage = getUnsafeTextInputMessage([
-      { label: "사용자 식별값", value: rawUserFingerprint },
-    ]);
-    if (unsafeInputMessage) {
-      return NextResponse.json({ error: unsafeInputMessage }, { status: 400 });
-    }
-
-    const userFingerprint = rawUserFingerprint.trim();
-    if (!userFingerprint || userFingerprint.length > 200) {
-      return NextResponse.json({ error: "userFingerprint must be 1-200 chars." }, { status: 400 });
-    }
-
-    if (body.reaction !== null && body.reaction !== "like" && body.reaction !== "dislike") {
-      return NextResponse.json({ error: "reaction must be like, dislike, or null." }, { status: 400 });
+    if (!body || (body.reaction !== "like" && body.reaction !== "dislike")) {
+      return NextResponse.json({ error: "reaction must be like or dislike." }, { status: 400 });
     }
 
     const supabaseMutation = getSupabaseMutationClient();
@@ -77,20 +63,25 @@ export async function POST(request: Request, context: Context) {
 
     // The RPC holds the same poll-first lock used by moderation and vote
     // mutations, rechecks visibility, then applies and counts the reaction.
-    const { data, error } = await supabaseMutation.rpc("set_comment_reaction", {
+    const { data, error } = await supabaseMutation.rpc("toggle_comment_reaction_with_actor", {
       p_comment_id: id.toLowerCase(),
-      p_user_fingerprint: userFingerprint,
+      p_actor_key: actor.key,
       p_reaction: body.reaction,
     });
     if (error) return moderationErrorResponse(error, "comment-reaction-rpc");
-    if (!data || !Number.isInteger(data.likeCount) || !Number.isInteger(data.dislikeCount)) {
+    if (!data || !Number.isInteger(data.likeCount) || !Number.isInteger(data.dislikeCount)
+      || data.likeCount < 0 || data.dislikeCount < 0
+      || ![null, 'like', 'dislike'].includes(data.userReaction)) {
       logPublicMutationError("comment-reaction-empty-result", new Error("Invalid reaction result."));
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
-    return NextResponse.json({
+    const response = NextResponse.json({
       likeCount: data.likeCount, dislikeCount: data.dislikeCount, userReaction: data.userReaction,
     }, { headers: { "Cache-Control": "no-store" } });
+    setGuestCommentCookie(response, actor.newCookie, request);
+    return response;
   } catch (error) {
+    if (error instanceof CommentIdentityUnavailable) return NextResponse.json({ error: '반응 기능을 준비 중이에요.' }, { status: 503 });
     logPublicMutationError("comment-reaction-unexpected", error);
     return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
   }

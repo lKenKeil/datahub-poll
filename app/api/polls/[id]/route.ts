@@ -3,6 +3,9 @@ import { POLLS } from "@/data/polls";
 import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/content-report-server";
 import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server";
 import { isValidVoterId } from "@/lib/voter-id";
+import { getCommentReactionActor } from '@/lib/comment-reaction-identity';
+import { CommentIdentityUnavailable } from '@/lib/comment-identity';
+import { parseCommentSort, sortComments } from '@/lib/comment-sorting';
 import type { PollCategory } from "@/lib/types";
 import { authorizePollOwner } from "@/lib/poll-owner-auth";
 import {
@@ -168,7 +171,10 @@ export async function GET(request: Request, context: Context) {
     if (!validatePollId(id)) {
       return NextResponse.json({ error: "invalid poll id." }, { status: 400, headers });
     }
-    const userFingerprint = request.headers.get("x-user-fp")?.trim() ?? "";
+    // Reaction identity is independent of question voting and never caller-supplied.
+    let reactionActor: string | null = null;
+    try { reactionActor = (await getCommentReactionActor(request)).key; }
+    catch (error) { if (!(error instanceof CommentIdentityUnavailable)) throw error; }
     const voterId = request.headers.get("x-voter-id")?.trim().toLowerCase() ?? "";
     if (voterId && !isValidVoterId(voterId)) {
       return NextResponse.json({ error: "invalid voter id." }, { status: 400, headers });
@@ -238,7 +244,7 @@ export async function GET(request: Request, context: Context) {
     const visibleIds = visibleComments.map((comment) => String(comment.id));
     const byComment = new Map<string, { like: number; dislike: number; userReaction: "like" | "dislike" | null }>();
     if (visibleIds.length > 0) {
-      const { data: reactions, error: reactionsError } = await supabaseServer
+      const { data: reactions, error: reactionsError } = await supabaseMutation
         .from("comment_reactions").select("comment_id,reaction,user_fingerprint")
         .in("comment_id", visibleIds);
       if (reactionsError) throw reactionsError;
@@ -247,7 +253,7 @@ export async function GET(request: Request, context: Context) {
         const bucket = byComment.get(key) ?? { like: 0, dislike: 0, userReaction: null };
         if (row.reaction === "like") bucket.like += 1;
         if (row.reaction === "dislike") bucket.dislike += 1;
-        if (userFingerprint && row.user_fingerprint === userFingerprint
+        if (reactionActor && row.user_fingerprint === reactionActor
           && (row.reaction === "like" || row.reaction === "dislike")) {
           bucket.userReaction = row.reaction;
         }
@@ -310,7 +316,7 @@ export async function GET(request: Request, context: Context) {
         ...serializePublicPoll(poll),
         ...getPollStructuralEditState(poll, (commentStates ?? []).length > 0, hasAnyVotes),
       },
-      comments: enriched, viewerVote, reportable: true,
+      comments: sortComments(enriched as Array<Record<string, unknown> & { id: unknown }>, parseCommentSort(new URL(request.url).searchParams.get('comments'))), viewerVote, reportable: true,
     }, { headers });
   } catch (error) {
     if (isModerationMigrationMissing(error)) return moderationErrorResponse(error, "poll-detail-read");

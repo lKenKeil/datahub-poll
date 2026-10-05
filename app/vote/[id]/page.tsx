@@ -10,6 +10,7 @@ import { useAuth } from '@/components/auth-provider';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { ContentReportDialog, type ContentReportTarget } from '@/components/content-report-dialog';
 import { HIDDEN_COMMENT_PLACEHOLDER } from '@/lib/content-reporting';
+import { COMMENT_SORTS, parseCommentSort, sortComments, type CommentSort } from '@/lib/comment-sorting';
 import { POLLS } from '../../../data/polls';
 import { CommentRow, DbPoll } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
@@ -144,6 +145,21 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const { user, profile, openLogin } = useAuth();
   const resolvedParams = use(params);
   const id = resolvedParams.id;
+  const [commentSort, setCommentSort] = useState<CommentSort>('likes');
+  const reactionInFlight = useRef(new Set<string>());
+  useEffect(() => {
+    const sync = () => setCommentSort(parseCommentSort(new URLSearchParams(window.location.search).get('comments')));
+    sync();
+    window.addEventListener('popstate', sync);
+    return () => window.removeEventListener('popstate', sync);
+  }, [id]);
+  const changeCommentSort = (value: string) => {
+    const mode = parseCommentSort(value);
+    const url = new URL(window.location.href);
+    url.searchParams.set('comments', mode);
+    window.history.pushState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    setCommentSort(mode);
+  };
 
   const officialPoll = useMemo(() => POLLS.find((item) => item.id === id), [id]);
   const dbPollId = officialPoll ? `official_${id}` : id;
@@ -258,7 +274,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     if (silent) setSyncState('syncing');
 
     try {
-      const response = await fetch(`/api/polls/${dbPollId}`, {
+      const response = await fetch(`/api/polls/${dbPollId}?comments=${commentSort}`, {
         cache: 'no-store',
         headers: {
           ...(userFingerprint ? { 'x-user-fp': userFingerprint } : {}),
@@ -433,7 +449,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     } finally {
       if (generation === pollRequestGenerationRef.current) setLoading(false);
     }
-  }, [dbPollId, id, officialPoll, userFingerprint, voterId]);
+  }, [dbPollId, id, officialPoll, userFingerprint, voterId, commentSort]);
 
   const scheduleSilentRefresh = useCallback(() => {
     if (silentRefreshTimerRef.current) {
@@ -445,8 +461,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   }, [fetchAllData]);
 
   useEffect(() => {
-    void fetchAllData();
-  }, [fetchAllData]);
+    void fetchAllData({ silent: Boolean(lastSnapshotRef.current) });
+  }, [fetchAllData, user?.id, profile?.avatar_url, profile?.show_avatar]);
 
   useEffect(() => {
     if (
@@ -493,13 +509,6 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           scheduleSilentRefresh();
         },
       )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'comment_reactions' },
-        () => {
-          scheduleSilentRefresh();
-        },
-      )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') setSyncState('live');
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -520,7 +529,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     };
   }, [dbPollId, fetchAllData, scheduleSilentRefresh]);
 
-  const parentComments = useMemo(() => comments.filter((comment) => !comment.parent_id), [comments]);
+  const parentComments = useMemo(() => sortComments(comments, commentSort).filter((comment) => !comment.parent_id), [comments, commentSort]);
   const repliesByParent = useMemo(() => {
     const map = new Map<string, CommentView[]>();
     for (const comment of comments) {
@@ -823,16 +832,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   };
 
   const handleReaction = async (commentId: string, reaction: 'like' | 'dislike') => {
-    if (!user) { openLogin('의견에 반응하려면 로그인이 필요해요.'); return; }
+    if (reactionInFlight.current.has(commentId)) return;
+    reactionInFlight.current.add(commentId);
     setActionError('');
     try {
-      const target = comments.find((comment) => String(comment.id) === commentId);
-      const nextReaction = target?.user_reaction === reaction ? null : reaction;
-
       const response = await fetch(`/api/comments/${commentId}/react`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userFingerprint, reaction: nextReaction }),
+        body: JSON.stringify({ reaction }),
       });
 
       const json = (await response.json()) as { likeCount?: number; dislikeCount?: number; userReaction?: 'like' | 'dislike' | null; error?: string };
@@ -864,8 +871,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       if (error instanceof ApiResponseError && error.status === 429) {
         setActionError(error.message);
       } else {
-        alert(`공감 반영 실패: ${getErrorMessage(error)}`);
+        setActionError('반응을 반영하지 못했어요. 잠시 후 다시 시도해주세요.');
       }
+    } finally {
+      reactionInFlight.current.delete(commentId);
     }
   };
 
@@ -1128,6 +1137,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                   <span>반응 {reactionCount}개</span>
                 </div>
               </div>
+              <label className="flex items-center gap-2 text-sm text-muted">정렬
+                <select aria-label="의견 정렬" value={commentSort} onChange={event => changeCommentSort(event.target.value)} className="min-h-11 max-w-full rounded-xl border border-line bg-surface px-3 text-sm text-ink">
+                  {Object.entries(COMMENT_SORTS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
             </div>
 
             <form onSubmit={handleCommentSubmit} aria-busy={commentPending} className="border-y border-line py-5 dark:border-line">

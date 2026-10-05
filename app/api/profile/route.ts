@@ -51,12 +51,12 @@ export async function PATCH(request: Request) {
     if (typeof body.onboardingCompleted === 'boolean') update.onboarding_completed = body.onboardingCompleted;
     const client = getSupabaseMutationClient();
     const current = await ensureAccountProfile(client, auth.user.id);
-    if (body.showAvatar === true && !current.avatar_url) {
-      return NextResponse.json({ error: '사용할 소셜 프로필 사진이 없어요.' }, { status: 400, headers });
+    if (body.showAvatar === true && !current.avatar_url && !current.show_avatar) {
+      return NextResponse.json({ error: '사용할 프로필 사진이 없어요.' }, { status: 400, headers });
     }
     if (typeof body.showAvatar === 'boolean') update.show_avatar = body.showAvatar;
     const { data, error } = await client.from('profiles').update(update).eq('id', auth.user.id)
-      .select('nickname,avatar_url,onboarding_completed,show_avatar').single();
+      .select('nickname,avatar_url,onboarding_completed,show_avatar,avatar_source,social_avatar_url,uploaded_avatar_url').single();
     if (error?.code === '23505') {
       return NextResponse.json({ error: '이미 사용 중인 닉네임이에요.', code: 'NICKNAME_TAKEN' }, { status: 409, headers });
     }

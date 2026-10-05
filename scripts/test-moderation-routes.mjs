@@ -92,6 +92,11 @@ function supabaseClient(role) {
     storage: {
       from(bucket) {
         return {
+          async upload(objectPath, data, options) {
+            calls.push({ role, bucket, storageUpload: objectPath, data, options });
+            return { data: { path: objectPath }, error: storageFailure };
+          },
+          getPublicUrl(objectPath) { return { data: { publicUrl: `https://storage.example.invalid/storage/v1/object/public/${bucket}/${objectPath}` } }; },
           async remove(paths) {
             calls.push({ role, bucket, storageRemove: [...paths] });
             return { data: null, error: storageFailure };
@@ -174,8 +179,7 @@ function supabaseClient(role) {
           database.profiles.push(profile);
         }
         if (name === "recommend_user_profile_nickname") profile.nickname = "졸린수달6142";
-        return { data: { nickname: profile.nickname, avatar_url: profile.avatar_url,
-          onboarding_completed: profile.onboarding_completed, show_avatar: profile.show_avatar ?? false }, error: null };
+        return { data: { ...profile }, error: null };
       }
       if (name === "create_owned_poll_with_author") {
         assert.equal(role, "service");
@@ -215,8 +219,25 @@ function supabaseClient(role) {
         database.reports.add(key);
         return { data: { duplicate }, error: null };
       }
-      if (name === "set_comment_reaction") {
-        return { data: { likeCount: 1, dislikeCount: 0, userReaction: payload.p_reaction }, error: null };
+      if (name === 'toggle_comment_reaction_with_actor') {
+        const matching = database.comment_reactions.find(row => row.comment_id === payload.p_comment_id && row.user_fingerprint === payload.p_actor_key);
+        let result = payload.p_reaction;
+        if (matching?.reaction === payload.p_reaction) {
+          database.comment_reactions.splice(database.comment_reactions.indexOf(matching), 1); result = null;
+        } else if (matching) matching.reaction = payload.p_reaction;
+        else database.comment_reactions.push({ comment_id: payload.p_comment_id, user_fingerprint: payload.p_actor_key, reaction: payload.p_reaction });
+        const rows = database.comment_reactions.filter(row => row.comment_id === payload.p_comment_id);
+        return { data: { likeCount: rows.filter(row => row.reaction === 'like').length, dislikeCount: rows.filter(row => row.reaction === 'dislike').length, userReaction: result }, error: null };
+      }
+      if (name === 'change_profile_avatar') {
+        const profile = database.profiles.find(row => row.id === payload.p_user_id);
+        if ((profile.uploaded_avatar_path ?? null) !== payload.p_expected_path) return { data: null, error: { code: 'P0001', message: 'AVATAR_CONFLICT' } };
+        profile.social_avatar_url ??= profile.avatar_url;
+        const previous = payload.p_new_path ? profile.uploaded_avatar_path : null;
+        if (payload.p_new_path) { profile.uploaded_avatar_path = payload.p_new_path; profile.uploaded_avatar_url = payload.p_new_url; }
+        profile.avatar_source = payload.p_source;
+        profile.avatar_url = payload.p_source === 'default' ? null : payload.p_source === 'social' ? profile.social_avatar_url : profile.uploaded_avatar_url;
+        return { data: { profile: { ...profile }, previous_path: previous }, error: null };
       }
       if (name === "moderate_report_target" || name === "delete_comment_with_dependents") {
         return { data: { ok: true }, error: null };
@@ -334,6 +355,8 @@ const list = loadModule("app/api/polls/route.ts");
 const votes = loadModule("app/api/polls/[id]/vote/route.ts");
 const comments = loadModule("app/api/polls/[id]/comments/route.ts");
 const reactions = loadModule("app/api/comments/[id]/react/route.ts");
+const avatars = loadModule('app/api/profile/avatar/route.ts');
+const sorting = loadModule('lib/comment-sorting.ts');
 const reports = loadModule("app/api/reports/route.ts");
 const admin = loadModule("app/api/admin/polls/route.ts");
 const metadata = loadModule("app/vote/[id]/layout.tsx");
@@ -467,7 +490,9 @@ test("reaction success uses atomic RPC while preserving response contract", asyn
   database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, is_hidden: false });
   const json = await responseJson(await reactions.POST(request("POST", { userFingerprint: "test-fingerprint", reaction: "like" }), context(COMMENT_ID)), 200);
   assert.deepEqual(json, { likeCount: 1, dislikeCount: 0, userReaction: "like" });
-  assert.equal(calls.find((call) => call.rpc)?.rpc, "set_comment_reaction");
+  const rpc = calls.find((call) => call.rpc);
+  assert.equal(rpc.rpc, 'toggle_comment_reaction_with_actor');
+  assert.equal(rpc.payload.p_actor_key, `account:${AUTH_USER_ID}`);
 });
 
 test("public read errors are generic and missing moderation schema fails closed", async () => {
@@ -841,11 +866,10 @@ test("anonymous public reads/results remain available without altering votes", a
   assert.equal(JSON.stringify(database.polls), before);
 });
 
-test("guest poll creation and reaction remain login-only", async () => {
+test("guest poll creation remains login-only", async () => {
   authUser = null;
   for (const response of [
     await list.POST(request("POST", createBody)),
-    await reactions.POST(request("POST", { userFingerprint: "test-fingerprint", reaction: "like" }), context(COMMENT_ID)),
   ]) {
     const json = await responseJson(response, 401);
     assert.equal(json.code, "AUTH_REQUIRED");
@@ -987,7 +1011,8 @@ test("profile routes require verified Auth and do not trust caller account ident
   assert.equal(JSON.stringify(database.profiles), before);
   const json = await responseJson(await profileRoute.GET(new Request(`https://example.invalid/api/profile?userId=${REPORTER_ID}`)), 200);
   assert.equal(calls.at(-1).payload.p_user_id, AUTH_USER_ID);
-  assert.deepEqual(json.data, { nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR, onboarding_completed: false, show_avatar: false });
+  assert.deepEqual(json.data, { nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR, onboarding_completed: false, show_avatar: false,
+    avatar_source: 'social', social_avatar_url: PROFILE_AVATAR, uploaded_avatar_url: null });
   assertNoAccountIdentity(json);
 });
 
@@ -1359,6 +1384,198 @@ test("proxy forwards refreshed cookie chunks to request and uncached response", 
     if (originalKey === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     else process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = originalKey;
   }
+});
+
+test('guest reaction toggles like/unlike/dislike/remove/switch without exposing actors', async () => {
+  authUser = null;
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, is_hidden: false });
+  let cookie;
+  for (const [reaction, expected] of [['like','like'], ['like',null], ['dislike','dislike'], ['dislike',null], ['like','like'], ['dislike','dislike']]) {
+    const response = await reactions.POST(request('POST', { reaction, userId: REPORTER_ID, guestId: VOTER_ID, userFingerprint: 'spoof' }, cookie ? { cookie } : {}), context(COMMENT_ID));
+    if (!cookie) cookie = response.headers.get('set-cookie').split(';')[0];
+    const json = await responseJson(response, 200);
+    assert.equal(json.userReaction, expected);
+    assert.equal(json.likeCount + json.dislikeCount, expected ? 1 : 0);
+    assert.deepEqual(Object.keys(json).sort(), ['dislikeCount', 'likeCount', 'userReaction']);
+    assert.ok(!JSON.stringify(json).includes(cookie.split('=')[1]));
+  }
+  assert.equal(database.comment_reactions.length, 1);
+  assert.match(database.comment_reactions[0].user_fingerprint, /^guest:[0-9a-f]{64}$/);
+  assert.ok(!database.comment_reactions[0].user_fingerprint.includes(cookie.split('=')[1]));
+  const detailRequest = request('GET', undefined, { cookie, 'x-user-fp': 'spoof' });
+  const json = await responseJson(await detail.GET(detailRequest, context()), 200);
+  assert.equal(json.comments[0].user_reaction, 'dislike');
+  assert.ok(!JSON.stringify(json).includes(database.comment_reactions[0].user_fingerprint));
+});
+
+test('different guests are independent; legacy and account reactions remain intact', async () => {
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, is_hidden: false });
+  database.comment_reactions.push({ comment_id: COMMENT_ID, user_fingerprint: 'legacy-fingerprint', reaction: 'like' });
+  await responseJson(await reactions.POST(request('POST', { reaction: 'like' }), context(COMMENT_ID)), 200);
+  authUser = null;
+  for (let i = 0; i < 2; i++) await responseJson(await reactions.POST(request('POST', { reaction: 'like' }), context(COMMENT_ID)), 200);
+  assert.equal(database.comment_reactions.length, 4);
+  assert.equal(database.comment_reactions[0].user_fingerprint, 'legacy-fingerprint');
+  assert.equal(new Set(database.comment_reactions.map(row => row.user_fingerprint)).size, 4);
+  authUser = { id: AUTH_USER_ID };
+  const json = await responseJson(await detail.GET(request('GET', undefined, { 'x-user-fp': 'legacy-fingerprint' }), context()), 200);
+  assert.equal(json.comments[0].like_count, 4);
+  assert.equal(json.comments[0].user_reaction, 'like');
+});
+
+test('guest reaction fail-closed Auth/cross-origin/rate limits and safe DB errors', async () => {
+  authUser = null;
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, is_hidden: false });
+  await responseJson(await reactions.POST(request('POST', { reaction: 'like' }, { origin: 'https://other.invalid' }), context(COMMENT_ID)), 403);
+  await responseJson(await reactions.POST(request('POST', { reaction: 'like' }, { cookie: 'sb-test-auth-token=invalid' }), context(COMMENT_ID)), 401);
+  rpcFailure = { code: 'XX000', message: RAW_ERROR };
+  assertNoSecrets(await responseJson(await reactions.POST(request('POST', { reaction: 'like' }), context(COMMENT_ID)), 500));
+  rpcFailure = null;
+  const policy = loadModule('lib/rate-limit.ts').RATE_LIMIT_POLICIES.commentReaction;
+  for (let i = 0; i < policy.limit; i++) await responseJson(await reactions.POST(request('POST', { reaction: 'like' }, {}, '198.51.100.241'), context(COMMENT_ID)), 200);
+  await responseJson(await reactions.POST(request('POST', { reaction: 'dislike' }, {}, '198.51.100.241'), context(COMMENT_ID)), 429);
+});
+
+test('guest missing identity secret disables reactions safely', async () => {
+  authUser = null;
+  delete process.env.GUEST_ID_SECRET;
+  try { await responseJson(await reactions.POST(request('POST', { reaction: 'like' }), context(COMMENT_ID)), 503); }
+  finally { process.env.GUEST_ID_SECRET = 'mock-only-guest-identity-key-not-a-credential'; }
+});
+
+test('sorting all four modes uses exact tie breakers and leaves reply order unchanged', async () => {
+  const rows = [
+    { id: 'b', parent_id: null, like_count: 3, dislike_count: 1, created_at: '2026-10-01' },
+    { id: 'a', parent_id: null, like_count: 3, dislike_count: 1, created_at: '2026-10-01' },
+    { id: 'c', parent_id: null, like_count: 3, dislike_count: 0, created_at: '2026-09-01' },
+    { id: 'd', parent_id: null, like_count: 0, dislike_count: 5, created_at: '2026-10-02' },
+    { id: 'r1', parent_id: 'b', created_at: '2026-10-01' },
+    { id: 'r2', parent_id: 'b', created_at: '2026-10-02' },
+    { id: 'r3', parent_id: 'c', is_hidden: true, created_at: '2026-10-02' },
+  ];
+  for (const [mode, expected] of [['likes',['c','a','b','d']],['dislikes',['d','a','b','c']],['replies',['b','a','c','d']],['latest',['d','a','b','c']]]) {
+    const result = sorting.sortComments(rows, mode);
+    assert.deepEqual(result.filter(row => !row.parent_id).map(row => row.id), expected);
+    assert.deepEqual(result.filter(row => row.parent_id).map(row => row.id), ['r1','r2','r3']);
+  }
+  assert.equal(sorting.parseCommentSort('bad'), 'likes');
+});
+
+test('avatar upload/select require verified session and ignore arbitrary target/path', async () => {
+  authUser = null;
+  await responseJson(await avatars.POST(request('POST')), 401);
+  await responseJson(await avatars.PATCH(request('PATCH', { source: 'default' })), 401);
+  assert.equal(calls.length, 0);
+  authUser = { id: AUTH_USER_ID };
+  await responseJson(await avatars.PATCH(request('PATCH', { source: 'default', userId: REPORTER_ID })), 400);
+  await responseJson(await avatars.PATCH(request('PATCH', { source: 'invalid' })), 400);
+  const data = await responseJson(await avatars.PATCH(request('PATCH', { source: 'default' })), 200);
+  assert.equal(data.data.avatar_url, null);
+  assert.equal(data.data.social_avatar_url, PROFILE_AVATAR);
+  assert.equal(calls.find(call => call.rpc === 'change_profile_avatar').payload.p_user_id, AUTH_USER_ID);
+});
+
+test('avatar validates real bytes, SVG/GIF/HTML rejection and 2MB boundary before Storage', async () => {
+  const candidates = [
+    new File(['<svg></svg>'], 'bad.svg', { type: 'image/svg+xml' }),
+    new File(['<svg></svg>'], 'pretend.png', { type: 'image/png' }),
+    new File(['GIF89a'], 'bad.gif', { type: 'image/gif' }),
+    new File(['<html>'], 'bad.jpg', { type: 'image/jpeg' }),
+    new File([Buffer.alloc(2 * 1024 * 1024 + 1)], 'big.png', { type: 'image/png' }),
+  ];
+  for (const file of candidates) {
+    const form = new FormData(); form.set('avatar', file);
+    await responseJson(await avatars.POST(request('POST', form)), file.size > 2 * 1024 * 1024 ? 413 : 400);
+  }
+  assert.equal(calls.filter(call => call.storageUpload).length, 0);
+});
+
+test('avatar WebP square encoding strips EXIF and uses opaque paths with opt-in unchanged', async () => {
+  const sharp = nativeRequire('sharp');
+  const png = await sharp({ create: { width: 800, height: 600, channels: 3, background: 'blue' } }).png().withMetadata().toBuffer();
+  const form = new FormData(); form.set('avatar', new File([png], 'photo.png', { type: 'image/png' }));
+  const json = await responseJson(await avatars.POST(request('POST', form)), 200);
+  const uploaded = calls.find(call => call.storageUpload);
+  const metadata = await sharp(uploaded.data).metadata();
+  assert.equal(metadata.format, 'webp'); assert.equal(metadata.width, 512); assert.equal(metadata.height, 512);
+  assert.equal(metadata.exif, undefined);
+  assert.match(uploaded.storageUpload, /^avatars\/[0-9a-f-]{36}\.webp$/);
+  assert.equal(uploaded.options.upsert, false);
+  assert.equal(json.data.show_avatar, false);
+  assert.ok(!json.data.avatar_url.includes(AUTH_USER_ID));
+  const oldPath = uploaded.storageUpload;
+  calls.length = 0;
+  await responseJson(await avatars.POST(request('POST', form)), 200);
+  assert.deepEqual(calls.find(call => call.storageRemove).storageRemove, [oldPath]);
+  assert.ok(!calls.find(call => call.storageRemove).storageRemove.includes(PROFILE_AVATAR));
+  assert.equal(json.data.social_avatar_url, PROFILE_AVATAR);
+});
+
+test('avatar replacement CAS conflict cleans only new orphan, preserving previous object', async () => {
+  const png = await nativeRequire('sharp')({ create: { width: 16, height: 16, channels: 3, background: 'blue' } }).png().toBuffer();
+  const form = new FormData(); form.set('avatar', new File([png], 'photo.png', { type: 'image/png' }));
+  // Model a conflict returned by the locked compare-and-swap after profile read.
+  queryHook = query => { if (query.table === 'profiles' && query.fields === 'uploaded_avatar_path') rpcFailure = { code: 'P0001', message: 'AVATAR_CONFLICT' }; };
+  await responseJson(await avatars.POST(request('POST', form)), 409);
+  const upload = calls.find(call => call.storageUpload);
+  assert.deepEqual(calls.find(call => call.storageRemove).storageRemove, [upload.storageUpload]);
+  assert.equal(database.profiles[0].avatar_url, PROFILE_AVATAR);
+});
+
+test('uploaded avatars honor opt-in and remain hidden on anonymous comments', async () => {
+  const uploadedUrl = 'https://storage.example.invalid/storage/v1/object/public/profile-avatars/avatars/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.webp';
+  database.profiles[0].avatar_url = uploadedUrl;
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, parent_id: null, text: '공개 의견', is_hidden: false, is_anonymous: false, user_id: AUTH_USER_ID, created_at: '2026-10-01' });
+  let json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(json.comments[0].avatar_url, null);
+  database.profiles[0].show_avatar = true;
+  json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(json.comments[0].avatar_url, uploadedUrl);
+  database.comments[0].is_anonymous = true;
+  json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.ok(!JSON.stringify(json.comments).includes(uploadedUrl));
+  assertNoAccountIdentity(json, { anonymous: true });
+});
+
+test('concurrent same guest toggles keep a single actor and nonnegative counts on replies', async () => {
+  authUser = null;
+  database.comments.push({ id: REPLY_ID, parent_id: COMMENT_ID, poll_id: POLL_ID, is_hidden: false });
+  const cookie = `askio_guest_id=${VOTER_ID}`;
+  const results = await Promise.all(Array.from({ length: 10 }, () => reactions.POST(request('POST', { reaction: 'like' }, { cookie }), context(REPLY_ID))));
+  for (const response of results) {
+    const json = await responseJson(response, 200);
+    assert.ok(json.likeCount >= 0 && json.dislikeCount >= 0);
+  }
+  assert.equal(database.comment_reactions.length, 0);
+  await responseJson(await reactions.POST(request('POST', { reaction: 'dislike' }, { cookie }), context(REPLY_ID)), 200);
+  assert.equal(database.comment_reactions.length, 1);
+});
+
+test('avatar RPC failure preserves potentially committed object; storage failure remains generic', async () => {
+  const png = await nativeRequire('sharp')({ create: { width: 16, height: 16, channels: 3, background: 'blue' } }).png().toBuffer();
+  const form = new FormData(); form.set('avatar', new File([png], 'photo.png', { type: 'image/png' }));
+  queryHook = query => { if (query.table === 'profiles' && query.fields === 'uploaded_avatar_path') rpcFailure = { message: RAW_ERROR }; };
+  assertNoSecrets(await responseJson(await avatars.POST(request('POST', form)), 500));
+  assert.equal(calls.filter(call => call.storageRemove).length, 0);
+  queryHook = null; rpcFailure = null; storageFailure = { message: RAW_ERROR };
+  assertNoSecrets(await responseJson(await avatars.POST(request('POST', form)), 500));
+});
+
+test('API sort query and ID ties are deterministic while replies stay attached', async () => {
+  database.comments.push(
+    { id: COMMENT_ID, poll_id: POLL_ID, parent_id: null, is_hidden: false, created_at: '2026-10-01', text: '이전' },
+    { id: REPLY_ID, poll_id: POLL_ID, parent_id: null, is_hidden: false, created_at: '2026-10-02', text: '최신' },
+  );
+  const json = await responseJson(await detail.GET(new Request('https://example.invalid/api/test?comments=latest'), context()), 200);
+  assert.deepEqual(json.comments.map(row => row.id), [REPLY_ID, COMMENT_ID]);
+});
+
+test('default image preserves prior opt-in and still permits nickname save', async () => {
+  database.profiles[0].show_avatar = true;
+  await responseJson(await avatars.PATCH(request('PATCH', { source: 'default' })), 200);
+  const json = await responseJson(await profileRoute.PATCH(request('PATCH', { nickname: PROFILE_NICKNAME, showAvatar: true })), 200);
+  assert.equal(json.data.show_avatar, true);
+  assert.equal(json.data.avatar_url, null);
 });
 
 let failed = 0;
