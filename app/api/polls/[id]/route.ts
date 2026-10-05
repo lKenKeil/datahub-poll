@@ -263,7 +263,7 @@ export async function GET(request: Request, context: Context) {
     const authorProfiles = new Map<string, PublicProfileIdentity>();
     if (publicAuthorIds.length > 0) {
       const { data: profiles, error: profilesError } = await supabaseMutation
-        .from("profiles").select("id,nickname,avatar_url").in("id", publicAuthorIds);
+        .from("profiles").select("id,nickname,avatar_url,show_avatar").in("id", publicAuthorIds);
       if (profilesError) throw profilesError;
       for (const profile of profiles ?? []) {
         if (typeof profile.nickname === "string") authorProfiles.set(String(profile.id), profile);

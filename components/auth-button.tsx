@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/auth-provider';
+import { ProfileAvatar } from '@/components/profile-avatar';
 
 export function AuthButton() {
   const { user, loading, profile, openLogin, signOut } = useAuth();
@@ -19,9 +20,10 @@ export function AuthButton() {
   };
   return (
     <details className="relative shrink-0">
-      <summary aria-label={`${name} 계정 메뉴`} className="flex min-h-11 min-w-11 max-w-20 cursor-pointer list-none items-center rounded-xl border border-line px-2 text-xs font-bold sm:max-w-28 sm:px-3 sm:text-sm"><span className="truncate">{name}</span></summary>
+      <summary aria-label={`${name} 계정 메뉴`} className="flex min-h-11 min-w-11 max-w-20 cursor-pointer list-none items-center gap-1 rounded-xl border border-line px-2 text-xs font-bold sm:max-w-36 sm:px-3 sm:text-sm"><ProfileAvatar name={name} url={profile?.show_avatar ? profile.avatar_url : null} size={20} /><span className="min-w-0 truncate">{name}</span><span aria-hidden="true" className="shrink-0">▾</span></summary>
       <div className="absolute right-0 top-full z-50 mt-2 w-52 max-w-[calc(100vw-32px)] rounded-2xl border border-line bg-surface p-3 shadow-lg">
         <p className="break-words text-xs text-muted">{name}</p>
+        <Link href="/me" className="mt-2 flex min-h-11 items-center rounded-xl px-3 text-sm font-medium">마이페이지</Link>
         <Link href="/profile" className="mt-2 flex min-h-11 items-center rounded-xl px-3 text-sm font-medium">프로필 설정</Link>
         <button type="button" disabled={pending} aria-busy={pending} onClick={() => void logout()} className="mt-2 min-h-11 w-full rounded-xl border border-line text-sm font-bold disabled:opacity-60">{pending ? '로그아웃 중...' : '로그아웃'}</button>
         <p aria-live="polite" className="text-xs text-danger">{error}</p>

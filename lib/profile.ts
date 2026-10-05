@@ -5,6 +5,7 @@ export type AccountProfile = {
   nickname: string;
   avatar_url: string | null;
   onboarding_completed: boolean;
+  show_avatar: boolean;
 };
 
 export function getSafeAvatarUrl(value: unknown): string | null {
@@ -26,5 +27,6 @@ export function parseAccountProfile(value: unknown): AccountProfile | null {
     nickname: nickname.value,
     avatar_url: getSafeAvatarUrl(raw.avatar_url),
     onboarding_completed: raw.onboarding_completed,
+    show_avatar: raw.show_avatar === true,
   };
 }

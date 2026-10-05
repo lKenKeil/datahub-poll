@@ -12,6 +12,7 @@ import {
 } from "@/lib/public-api-hardening";
 import { getUnicodeCodePointLength } from "@/lib/unicode-length";
 import { isModerationMigrationMissing, moderationErrorResponse, normalizeReportTarget } from "@/lib/content-report-server";
+import { anonymousCommentAlias, CommentIdentityUnavailable, getGuestCommentIdentity, hasAuthCredentials, hasMultipleGuestUrls, setGuestCommentCookie } from "@/lib/comment-identity";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -27,7 +28,7 @@ export async function POST(request: Request, context: Context) {
 
   try {
     const auth = await requireAuthenticatedUser(request);
-    if (auth.response) return auth.response;
+    if (auth.response && (auth.response.status !== 401 || hasAuthCredentials(request))) return auth.response;
     const { id } = await context.params;
     if (!id.trim() || id.length > 200 || hasUnsafeInputControlCharacters(id)) {
       return NextResponse.json({ error: "invalid poll id." }, { status: 400 });
@@ -106,28 +107,28 @@ export async function POST(request: Request, context: Context) {
       }
     }
 
-    const isAnonymous = body.isAnonymous === true;
-    // Anonymous authors are still authenticated; public identity is masked only.
-    const profile = isAnonymous ? null : await ensureAccountProfile(supabaseMutation, auth.user.id);
-    const insertPayload: Record<string, unknown> = {
-      poll_id: id,
-      text,
-      user_name: isAnonymous ? "익명" : profile!.nickname,
-      user_id: auth.user.id,
-      is_anonymous: isAnonymous,
-    };
-
-    if (parentId) {
-      insertPayload.parent_id = parentId;
+    const guest = !auth.user ? getGuestCommentIdentity(request) : null;
+    if (guest && hasMultipleGuestUrls(text)) {
+      return NextResponse.json({ error: "익명 의견에는 여러 링크를 포함할 수 없어요." }, { status: 400 });
     }
+    const isAnonymous = !auth.user || body.isAnonymous === true;
+    const alias = isAnonymous ? anonymousCommentAlias(id, guest ? 'guest' : 'account', guest?.hash ?? auth.user!.id) : null;
+    const profile = !isAnonymous && auth.user ? await ensureAccountProfile(supabaseMutation, auth.user.id) : null;
 
     const { data, error } = await supabaseMutation
-      .from("comments")
-      .insert(insertPayload)
-      .select("id,poll_id,parent_id,text,user_name,created_at,is_anonymous")
-      .single();
+      .rpc("create_comment_with_identity", {
+        p_poll_id: id, p_text: text, p_parent_id: parentId || null,
+        p_user_id: auth.user?.id ?? null, p_guest_id_hash: guest?.hash ?? null,
+        p_is_anonymous: isAnonymous, p_anonymous_alias: alias,
+        p_user_name: alias ?? profile!.nickname,
+      });
 
     if (error) {
+      if (error.code === "P0001" && ['GUEST_COMMENT_TOO_FAST', 'GUEST_COMMENT_DUPLICATE'].includes(error.message)) {
+        return NextResponse.json({ error: "잠시 후 다른 의견을 남겨주세요.", code: "RATE_LIMITED" }, {
+          status: 429, headers: { "Cache-Control": "private, no-store", "Retry-After": "10" },
+        });
+      }
       if (error.code === "P0002") {
         return NextResponse.json({ error: "질문 또는 의견을 찾을 수 없습니다." }, { status: 404 });
       }
@@ -136,10 +137,15 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500 });
     }
 
-    return NextResponse.json({
-      data: serializePublicComment({ ...data, is_anonymous: isAnonymous }, profile, true),
+    const response = NextResponse.json({
+      data: serializePublicComment({ ...data, is_anonymous: isAnonymous, anonymous_alias: alias }, profile, Boolean(auth.user)),
     }, { headers: { "Cache-Control": "private, no-store" } });
+    if (guest) setGuestCommentCookie(response, guest.newCookie, request);
+    return response;
   } catch (error) {
+    if (error instanceof CommentIdentityUnavailable) {
+      return NextResponse.json({ error: "익명 의견 작성을 준비 중이에요. 잠시 후 다시 시도해주세요." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
+    }
     return accountErrorResponse(error, "comment-create-unexpected");
   }
 }

@@ -7,7 +7,7 @@ const PUBLIC_POLL_FIELDS = [
   'edit_lock_minutes', 'edit_lock_participants', 'is_anonymous',
 ] as const;
 export const PUBLIC_POLL_COLUMNS = 'id,title,category,options,votes,participants,is_hidden,official_fact,option_image_paths,created_at,edit_lock_mode,edit_lock_minutes,edit_lock_participants,is_anonymous';
-export const PUBLIC_COMMENT_COLUMNS = 'id,poll_id,parent_id,text,user_name,created_at,is_hidden,is_anonymous';
+export const PUBLIC_COMMENT_COLUMNS = 'id,poll_id,parent_id,text,user_name,created_at,is_hidden,is_anonymous,anonymous_alias';
 
 export function serializePublicPoll(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -16,7 +16,7 @@ export function serializePublicPoll(value: unknown): Record<string, unknown> | n
     .map((field) => [field, row[field]]));
 }
 
-export type PublicProfileIdentity = { nickname: string; avatar_url: unknown };
+export type PublicProfileIdentity = { nickname: string; avatar_url: unknown; show_avatar?: boolean };
 
 export function serializePublicComment(
   row: Record<string, unknown>,
@@ -24,7 +24,8 @@ export function serializePublicComment(
   hasAccount = false,
 ) {
   const anonymous = row.is_anonymous === true;
-  const displayName = anonymous ? '익명' : profile?.nickname
+  const alias = typeof row.anonymous_alias === 'string' && /^익명 [가-힣]{1,8} [0-9]{2}$/.test(row.anonymous_alias) ? row.anonymous_alias : '익명';
+  const displayName = anonymous ? alias : profile?.nickname
     ?? (hasAccount ? '익명 유저' : typeof row.user_name === 'string' ? row.user_name : '익명 유저');
   return {
     id: row.id,
@@ -38,7 +39,7 @@ export function serializePublicComment(
     displayName,
     ...(!anonymous && profile ? {
       nickname: profile.nickname,
-      avatar_url: getSafeAvatarUrl(profile.avatar_url),
+      avatar_url: profile.show_avatar === true ? getSafeAvatarUrl(profile.avatar_url) : null,
     } : {}),
   };
 }

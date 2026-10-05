@@ -36,12 +36,13 @@ export async function PATCH(request: Request) {
     const limited = enforceRateLimit(request, PROFILE_UPDATE_LIMIT);
     if (limited) return limited;
     const body = await readBody(request);
-    if (!body || Object.keys(body).some((key) => !['nickname', 'onboardingCompleted'].includes(key))
-      || (!Object.hasOwn(body, 'nickname') && !Object.hasOwn(body, 'onboardingCompleted'))
-      || (body.onboardingCompleted !== undefined && typeof body.onboardingCompleted !== 'boolean')) {
+    if (!body || Object.keys(body).some((key) => !['nickname', 'onboardingCompleted', 'showAvatar'].includes(key))
+      || (!Object.hasOwn(body, 'nickname') && !Object.hasOwn(body, 'onboardingCompleted') && !Object.hasOwn(body, 'showAvatar'))
+      || (body.onboardingCompleted !== undefined && typeof body.onboardingCompleted !== 'boolean')
+      || (body.showAvatar !== undefined && typeof body.showAvatar !== 'boolean')) {
       return NextResponse.json({ error: '프로필 입력값을 확인해주세요.' }, { status: 400, headers });
     }
-    const update: { nickname?: string; onboarding_completed?: boolean } = {};
+    const update: { nickname?: string; onboarding_completed?: boolean; show_avatar?: boolean } = {};
     if (Object.hasOwn(body, 'nickname')) {
       const nickname = validateNickname(body.nickname);
       if (!nickname.ok) return NextResponse.json({ error: nickname.error }, { status: 400, headers });
@@ -49,9 +50,13 @@ export async function PATCH(request: Request) {
     }
     if (typeof body.onboardingCompleted === 'boolean') update.onboarding_completed = body.onboardingCompleted;
     const client = getSupabaseMutationClient();
-    await ensureAccountProfile(client, auth.user.id);
+    const current = await ensureAccountProfile(client, auth.user.id);
+    if (body.showAvatar === true && !current.avatar_url) {
+      return NextResponse.json({ error: '사용할 소셜 프로필 사진이 없어요.' }, { status: 400, headers });
+    }
+    if (typeof body.showAvatar === 'boolean') update.show_avatar = body.showAvatar;
     const { data, error } = await client.from('profiles').update(update).eq('id', auth.user.id)
-      .select('nickname,avatar_url,onboarding_completed').single();
+      .select('nickname,avatar_url,onboarding_completed,show_avatar').single();
     if (error?.code === '23505') {
       return NextResponse.json({ error: '이미 사용 중인 닉네임이에요.', code: 'NICKNAME_TAKEN' }, { status: 409, headers });
     }

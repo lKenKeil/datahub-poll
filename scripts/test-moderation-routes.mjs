@@ -27,6 +27,8 @@ let exchangedCode = null;
 let refreshCookies = false;
 let refreshCalls = 0;
 const originalAdminKey = process.env.ADMIN_DASHBOARD_KEY;
+const originalGuestSecret = process.env.GUEST_ID_SECRET;
+process.env.GUEST_ID_SECRET = 'mock-only-guest-identity-key-not-a-credential';
 const originalConsoleError = console.error;
 const loggedErrors = [];
 console.error = (...values) => loggedErrors.push(values);
@@ -70,7 +72,7 @@ function reset() {
     }],
     comments: [], poll_votes: [], comment_reactions: [], deleted_official_polls: [],
     profiles: [{ id: AUTH_USER_ID, nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR,
-      onboarding_completed: false, created_at: "2026-10-01", updated_at: "2026-10-01" }],
+      onboarding_completed: false, show_avatar: false, created_at: "2026-10-01", updated_at: "2026-10-01" }],
     poll_ownership: [{ poll_id: POLL_ID, owner_token_hash: createHash("sha256").update(OWNER_TOKEN).digest("hex") }],
     reports: new Set(),
   };
@@ -147,6 +149,23 @@ function supabaseClient(role) {
     async rpc(name, payload) {
       calls.push({ role, rpc: name, payload });
       if (rpcFailure) return { data: null, error: rpcFailure };
+      if (name === "create_comment_with_identity") {
+        assert.equal(role, "service");
+        const now = Date.now();
+        if (payload.p_guest_id_hash) {
+          const prior = database.comments.filter((row) => row.guest_id_hash === payload.p_guest_id_hash);
+          if (prior.some((row) => now - Date.parse(row.created_at) < 10_000)) return { data: null, error: { code: 'P0001', message: 'GUEST_COMMENT_TOO_FAST' } };
+          if (prior.some((row) => row.poll_id === payload.p_poll_id && row.text === payload.p_text
+            && now - Date.parse(row.created_at) < 600_000)) return { data: null, error: { code: 'P0001', message: 'GUEST_COMMENT_DUPLICATE' } };
+        }
+        const row = { id: payload.p_parent_id ? REPLY_ID : COMMENT_ID,
+          poll_id: payload.p_poll_id, parent_id: payload.p_parent_id, text: payload.p_text,
+          user_id: payload.p_user_id, guest_id_hash: payload.p_guest_id_hash,
+          is_anonymous: payload.p_is_anonymous, anonymous_alias: payload.p_anonymous_alias,
+          user_name: payload.p_user_name, created_at: new Date(now).toISOString(), is_hidden: false };
+        database.comments.push(row);
+        return { data: { ...row }, error: null };
+      }
       if (name === "ensure_user_profile" || name === "recommend_user_profile_nickname") {
         assert.equal(role, "service");
         let profile = database.profiles.find((row) => row.id === payload.p_user_id);
@@ -156,7 +175,7 @@ function supabaseClient(role) {
         }
         if (name === "recommend_user_profile_nickname") profile.nickname = "졸린수달6142";
         return { data: { nickname: profile.nickname, avatar_url: profile.avatar_url,
-          onboarding_completed: profile.onboarding_completed }, error: null };
+          onboarding_completed: profile.onboarding_completed, show_avatar: profile.show_avatar ?? false }, error: null };
       }
       if (name === "create_owned_poll_with_author") {
         assert.equal(role, "service");
@@ -225,7 +244,8 @@ function cookieJar(initial = []) {
 }
 const overrides = {
   "server-only": {},
-  "next/server": { NextResponse: class extends Response {
+  "next/server": { NextRequest: nativeRequire('next/server').NextRequest, NextResponse: class extends Response {
+    static json(body, options) { return nativeRequire('next/server').NextResponse.json(body, options); }
     static redirect(url, options) { return new Response(null, { status: 307, ...options, headers: { ...options?.headers, Location: String(url) } }); }
     static next() { const response = new Response(null); response.cookies = cookieJar(); return response; }
   } },
@@ -325,6 +345,8 @@ const adminDismiss = loadModule("app/api/admin/reports/dismiss/route.ts");
 const adminDelete = loadModule("app/api/admin/reports/delete/route.ts");
 const pollDeletion = loadModule("lib/poll-deletion.ts");
 const profileRoute = loadModule("app/api/profile/route.ts");
+const myActivity = loadModule("app/api/me/route.ts");
+const { anonymousCommentAlias, getGuestCommentIdentity, hasMultipleGuestUrls } = loadModule("lib/comment-identity.ts");
 const { validateNickname } = loadModule("lib/nickname.ts");
 const reportBody = (extra = {}) => ({ targetType: "poll", targetId: POLL_ID, reporterId: REPORTER_ID, reason: "spam", ...extra });
 
@@ -607,6 +629,207 @@ const { getSafeAuthReturnPath } = loadModule("lib/auth-redirect.ts");
 const { getAuthDisplayName } = loadModule("lib/auth-display.ts");
 const createBody = { title: "새 질문입니다", category: "커뮤니티", options: ["첫 선택", "다음 선택"] };
 
+test('guest identity helper generates only a valid opaque hash and independent aliases', async () => {
+  const guest = getGuestCommentIdentity(request());
+  assert.match(guest.hash, /^[0-9a-f]{64}$/);
+  assert.match(guest.newCookie, /^[0-9a-f-]{36}$/);
+  const same = getGuestCommentIdentity(request('GET', undefined, { cookie: `askio_guest_id=${guest.newCookie}` }));
+  assert.equal(same.hash, guest.hash);
+  assert.equal(same.newCookie, null);
+  const alias = anonymousCommentAlias(POLL_ID, 'guest', guest.hash);
+  assert.match(alias, /^익명 [가-힣]+ [0-9]{2}$/);
+  assert.equal(anonymousCommentAlias(POLL_ID, 'guest', same.hash), alias);
+  // Display aliases can collide; they are not unique identifiers.
+  assert.ok(new Set(Array.from({ length: 10 }, (_, index) => anonymousCommentAlias(`custom_${index}`, 'guest', same.hash))).size > 1);
+});
+
+const GUEST_COOKIE = `askio_guest_id=${OTHER_REPORTER_ID}`;
+function assertAnonymousIdentity(json) {
+  for (const key of ['user_id', 'guest_id_hash', 'anonymous_alias', 'nickname', 'avatar_url', 'email', 'user_metadata']) {
+    assert.equal(Object.hasOwn(json.data, key), false, `Anonymous response exposed ${key}.`);
+  }
+  assert.match(json.data.displayName, /^익명 [가-힣]+ [0-9]{2}$/);
+}
+
+test('guest comment creates a secure HttpOnly cookie, stores only HMAC and ignores spoofed identity', async () => {
+  authUser = null;
+  const response = await comments.POST(request('POST', { text: '게스트 의견', userId: AUTH_USER_ID,
+    guestId: REPORTER_ID, nickname: PROFILE_NICKNAME, alias: '가짜 이름' }), context());
+  const json = await responseJson(response, 200);
+  assertAnonymousIdentity(json);
+  const cookie = response.headers.get('set-cookie');
+  assert.match(cookie, /askio_guest_id=[0-9a-f-]{36}/);
+  for (const flag of ['HttpOnly', 'Secure', 'SameSite=lax', 'Path=/', 'Max-Age=31536000']) assert.ok(cookie.includes(flag));
+  const raw = cookie.match(/askio_guest_id=([^;]+)/)[1];
+  assert.ok(!JSON.stringify(database.comments).includes(raw));
+  assert.ok(!JSON.stringify(json).includes(raw));
+  assert.ok(!JSON.stringify(loggedErrors).includes(raw));
+  assert.equal(database.comments[0].user_id, null);
+  assert.match(database.comments[0].guest_id_hash, /^[0-9a-f]{64}$/);
+});
+
+test('guest reply reuses poll-scoped alias and cookie without linking an account', async () => {
+  authUser = null;
+  const initial = await comments.POST(request('POST', { text: '첫 의견' }, { cookie: GUEST_COOKIE }), context());
+  const first = await responseJson(initial, 200);
+  assert.equal(initial.headers.get('set-cookie'), null);
+  database.comments[0].created_at = new Date(Date.now() - 20_000).toISOString();
+  const reply = await responseJson(await comments.POST(request('POST', { text: '다른 이유도 있어요', parentId: COMMENT_ID }, { cookie: GUEST_COOKIE }), context()), 200);
+  assertAnonymousIdentity(reply);
+  assert.equal(reply.data.displayName, first.data.displayName);
+  assert.equal(database.comments[1].parent_id, COMMENT_ID);
+  assert.equal(database.comments[1].guest_id_hash, database.comments[0].guest_id_hash);
+  assert.equal(database.comments[1].user_id, null);
+});
+
+test('guest cooldown and duplicate text return safe429 with no second insert', async () => {
+  authUser = null;
+  await responseJson(await comments.POST(request('POST', { text: '같은 의견' }, { cookie: GUEST_COOKIE }), context()), 200);
+  const rapid = await comments.POST(request('POST', { text: '다른 의견' }, { cookie: GUEST_COOKIE }), context());
+  assertNoSecrets(await responseJson(rapid, 429));
+  assert.equal(rapid.headers.get('retry-after'), '10');
+  database.comments[0].created_at = new Date(Date.now() - 20_000).toISOString();
+  await responseJson(await comments.POST(request('POST', { text: '같은 의견' }, { cookie: GUEST_COOKIE }), context()), 429);
+  assert.equal(database.comments.length, 1);
+});
+
+test('guest multi-link spam is rejected while a single link is allowed', async () => {
+  authUser = null;
+  assert.equal(hasMultipleGuestUrls('example.com 과 www.example.org'), true);
+  await responseJson(await comments.POST(request('POST', { text: 'https://example.com https://example.org' }), context()), 400);
+  assert.equal(calls.filter((call) => call.rpc).length, 0);
+  await responseJson(await comments.POST(request('POST', { text: '참고 https://example.com' }), context()), 200);
+});
+
+test('guest IP limit persists even when cookies are replaced', async () => {
+  authUser = null;
+  for (let index = 0; index < 10; index += 1) await responseJson(await comments.POST(request('POST', { text: `의견 ${index}` }, {}, '198.51.100.240'), context()), 200);
+  await responseJson(await comments.POST(request('POST', { text: '추가 의견' }, {}, '198.51.100.240'), context()), 429);
+  assert.equal(database.comments.length, 10);
+});
+
+test('guest cross-origin, malformed parent and hidden parent fail without writes', async () => {
+  authUser = null;
+  await responseJson(await comments.POST(request('POST', { text: '의견' }, { origin: 'https://evil.invalid' }), context()), 403);
+  await responseJson(await comments.POST(request('POST', { text: '의견', parentId: 'bad-id' }), context()), 400);
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, is_hidden: true });
+  await responseJson(await comments.POST(request('POST', { text: '답글', parentId: COMMENT_ID }), context()), 404);
+  assert.equal(calls.filter((call) => call.rpc).length, 0);
+});
+
+test('missing guest secret fails closed503 but named comments remain available', async () => {
+  const secret = process.env.GUEST_ID_SECRET;
+  try {
+    delete process.env.GUEST_ID_SECRET;
+    authUser = null;
+    assertNoSecrets(await responseJson(await comments.POST(request('POST', { text: '의견' }), context()), 503));
+    assert.equal(calls.filter((call) => call.rpc).length, 0);
+    authUser = { id: AUTH_USER_ID, is_anonymous: false };
+    await responseJson(await comments.POST(request('POST', { text: '일반 의견' }), context()), 200);
+  } finally { process.env.GUEST_ID_SECRET = secret; }
+});
+
+test('guest localhost cookie is usable over HTTP without weakening HTTPS production', async () => {
+  authUser = null;
+  const local = new Request('http://localhost:3000/api/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '로컬 의견' }) });
+  const response = await comments.POST(local, context());
+  await responseJson(response, 200);
+  assert.ok(response.headers.get('set-cookie').includes('HttpOnly'));
+  assert.ok(!response.headers.get('set-cookie').includes('Secure'));
+});
+
+test('logged-in anonymous comments keep internal account but repeat only public alias', async () => {
+  const first = await responseJson(await comments.POST(request('POST', { text: '익명 의견', isAnonymous: true }), context()), 200);
+  const next = await responseJson(await comments.POST(request('POST', { text: '익명 답글', parentId: COMMENT_ID, isAnonymous: true }), context()), 200);
+  assertAnonymousIdentity(first);
+  assertAnonymousIdentity(next);
+  assert.equal(first.data.displayName, next.data.displayName);
+  assert.ok(database.comments.every((row) => row.user_id === AUTH_USER_ID && row.guest_id_hash === null));
+});
+
+test('avatar opt-in default hides social photo and explicit true reveals it only on named comments', async () => {
+  const off = await responseJson(await comments.POST(request('POST', { text: '일반 의견' }), context()), 200);
+  assert.equal(off.data.nickname, PROFILE_NICKNAME);
+  assert.equal(off.data.avatar_url, null);
+  await responseJson(await profileRoute.PATCH(request('PATCH', { showAvatar: true })), 200);
+  const on = await responseJson(await comments.POST(request('POST', { text: '사진 공개 의견' }), context()), 200);
+  assert.equal(on.data.avatar_url, PROFILE_AVATAR);
+  const hidden = await responseJson(await comments.POST(request('POST', { text: '익명 의견', isAnonymous: true }), context()), 200);
+  assertAnonymousIdentity(hidden);
+  await responseJson(await profileRoute.PATCH(request('PATCH', { showAvatar: false })), 200);
+  assert.equal((await responseJson(await profileRoute.GET(request()), 200)).data.show_avatar, false);
+});
+
+test('avatar preferences reject invalid flags or opt-in with no social image', async () => {
+  await responseJson(await profileRoute.PATCH(request('PATCH', { showAvatar: 'true' })), 400);
+  database.profiles[0].avatar_url = null;
+  await responseJson(await profileRoute.PATCH(request('PATCH', { showAvatar: true })), 400);
+  assert.equal(database.profiles[0].show_avatar, false);
+});
+
+test('my activity selects only verified authors including own anonymous replies, never guests or other accounts', async () => {
+  database.polls[0].author_user_id = AUTH_USER_ID;
+  database.polls.push({ ...database.polls[0], id: 'custom_other', author_user_id: REPORTER_ID });
+  database.comments.push(
+    { id: COMMENT_ID, poll_id: POLL_ID, text: '내 익명 의견', user_id: AUTH_USER_ID, is_anonymous: true, is_hidden: false },
+    { id: REPLY_ID, poll_id: POLL_ID, text: '내 답글', user_id: AUTH_USER_ID, parent_id: COMMENT_ID, is_hidden: false },
+    { id: REPORTER_ID, poll_id: POLL_ID, text: '타인 의견', user_id: REPORTER_ID, is_hidden: false },
+    { id: OTHER_REPORTER_ID, poll_id: POLL_ID, text: '게스트 의견', user_id: null, guest_id_hash: 'b'.repeat(64), is_hidden: false },
+  );
+  const response = await myActivity.GET(request());
+  const json = await responseJson(response, 200);
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual(json.polls.map((row) => row.id), [POLL_ID]);
+  assert.deepEqual(json.comments.map((row) => row.id), [COMMENT_ID, REPLY_ID]);
+  assert.equal(json.comments[0].is_anonymous, true);
+  assert.equal(json.comments[1].is_reply, true);
+  for (const row of [...json.polls, ...json.comments]) for (const key of ['user_id', 'author_user_id', 'guest_id_hash', 'email', 'avatar_url']) assert.equal(Object.hasOwn(row, key), false);
+});
+
+test('my activity rejects guest and arbitrary account queries', async () => {
+  authUser = null;
+  await responseJson(await myActivity.GET(request()), 401);
+  assert.equal(calls.length, 0);
+  authUser = { id: AUTH_USER_ID, is_anonymous: false };
+  await responseJson(await myActivity.GET(new Request(`https://example.invalid/api/me?userId=${REPORTER_ID}`)), 400);
+  assert.equal(calls.length, 0);
+});
+
+test('my activity final visibility check removes raced hidden comments and polls', async () => {
+  database.polls[0].author_user_id = AUTH_USER_ID;
+  database.comments.push({ id: COMMENT_ID, poll_id: POLL_ID, text: PRIVATE_TEXT, user_id: AUTH_USER_ID, is_hidden: false });
+  queryHook = (query) => { if (query.fields === 'id') database.comments[0].is_hidden = true; };
+  const json = await responseJson(await myActivity.GET(request()), 200);
+  assert.equal(json.comments.length, 0);
+  assertNoSecrets(json);
+  queryHook = (query) => { if (query.fields === 'id,title') database.polls[0].is_hidden = true; };
+  assert.deepEqual(await responseJson(await myActivity.GET(request()), 200), { polls: [], comments: [] });
+});
+
+test('my activity database errors expose only safe errors', async () => {
+  queryFailure = { table: 'comments', error: { code: 'XX000', message: RAW_ERROR } };
+  assertNoSecrets(await responseJson(await myActivity.GET(request()), 500));
+});
+
+test('public detail preserves guest alias without exposing its private hash or raw cookie', async () => {
+  authUser = null;
+  await responseJson(await comments.POST(request('POST', { text: '게스트 의견' }, { cookie: GUEST_COOKIE }), context()), 200);
+  const hash = database.comments[0].guest_id_hash;
+  const json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(json.comments[0].displayName, database.comments[0].anonymous_alias);
+  assertAnonymousIdentity({ data: json.comments[0] });
+  assert.ok(!JSON.stringify(json).includes(hash));
+  assert.ok(!JSON.stringify(json).includes(OTHER_REPORTER_ID));
+});
+
+test('missing guest posting RPC is safe503 and never falls back to direct inserts', async () => {
+  authUser = null;
+  rpcFailure = { code: 'PGRST202', message: RAW_ERROR };
+  assertNoSecrets(await responseJson(await comments.POST(request('POST', { text: '게스트 의견' }), context()), 503));
+  assert.equal(database.comments.length, 0);
+  assert.equal(calls.filter((call) => call.insert).length, 0);
+});
+
 test("anonymous public reads/results remain available without altering votes", async () => {
   authUser = null;
   database.polls[0].votes = [8, 4];
@@ -618,12 +841,10 @@ test("anonymous public reads/results remain available without altering votes", a
   assert.equal(JSON.stringify(database.polls), before);
 });
 
-test("anonymous create/comment/reply/reaction all fail401 before DB access", async () => {
+test("guest poll creation and reaction remain login-only", async () => {
   authUser = null;
   for (const response of [
     await list.POST(request("POST", createBody)),
-    await comments.POST(request("POST", { text: "의견" }), context()),
-    await comments.POST(request("POST", { text: "답글", parentId: COMMENT_ID }), context()),
     await reactions.POST(request("POST", { userFingerprint: "test-fingerprint", reaction: "like" }), context(COMMENT_ID)),
   ]) {
     const json = await responseJson(response, 401);
@@ -638,7 +859,7 @@ test("unverified expired anonymous-provider and unavailable Auth sessions fail c
     authFailure = scenario === "error" ? { message: RAW_ERROR } : null;
     authUser = scenario === "missing" ? null : { id: AUTH_USER_ID, is_anonymous: scenario === "anonymous" };
     authThrows = scenario === "throws";
-    assertNoSecrets(await responseJson(await comments.POST(request("POST", { text: "의견" }), context()), 401));
+    assertNoSecrets(await responseJson(await comments.POST(request("POST", { text: "의견" }, { cookie: 'sb-test-auth-token=invalid-session' }), context()), 401));
   }
   assert.equal(calls.length, 0);
   assertNoSecrets(loggedErrors);
@@ -698,12 +919,14 @@ test("authenticated reply rejects hidden and other-poll parents without inserts"
   assert.equal(calls.filter((call) => call.insert).length, 0);
 });
 
-test("logout session removal blocks new mutations while preserving existing data", async () => {
+test("logout preserves old authorship while new comments become separate guest activity", async () => {
   await responseJson(await comments.POST(request("POST", { text: "로그인 의견" }), context()), 200);
-  const before = JSON.stringify(database);
+  const before = JSON.stringify(database.comments[0]);
   authUser = null;
-  await responseJson(await comments.POST(request("POST", { text: "로그아웃 의견" }), context()), 401);
-  assert.equal(JSON.stringify(database), before);
+  await responseJson(await comments.POST(request("POST", { text: "로그아웃 의견" }), context()), 200);
+  assert.equal(JSON.stringify(database.comments[0]), before);
+  assert.equal(database.comments[1].user_id, null);
+  assert.ok(database.comments[1].guest_id_hash);
 });
 
 test("anonymous voting/change/duplicate protection still use existing voter RPCs", async () => {
@@ -725,7 +948,7 @@ test("anonymous reporting remains available independently of Auth", async () => 
 });
 
 test("authenticated insert DB failure never leaks internal error or user credentials", async () => {
-  queryHook = (query) => { if (query.insert) queryFailure = { table: "comments", error: { code: "XX000", message: RAW_ERROR } }; };
+  rpcFailure = { code: "XX000", message: RAW_ERROR };
   assertNoSecrets(await responseJson(await comments.POST(request("POST", { text: "의견" }), context()), 500));
   assertNoSecrets(loggedErrors);
 });
@@ -764,7 +987,7 @@ test("profile routes require verified Auth and do not trust caller account ident
   assert.equal(JSON.stringify(database.profiles), before);
   const json = await responseJson(await profileRoute.GET(new Request(`https://example.invalid/api/profile?userId=${REPORTER_ID}`)), 200);
   assert.equal(calls.at(-1).payload.p_user_id, AUTH_USER_ID);
-  assert.deepEqual(json.data, { nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR, onboarding_completed: false });
+  assert.deepEqual(json.data, { nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR, onboarding_completed: false, show_avatar: false });
   assertNoAccountIdentity(json);
 });
 
@@ -892,15 +1115,16 @@ test("anonymous comment preserves internal account ID but publishes no profile i
   }), context()), 200);
   assert.equal(database.comments[0].user_id, AUTH_USER_ID);
   assert.equal(database.comments[0].is_anonymous, true);
-  assert.equal(database.comments[0].user_name, "익명");
-  assert.equal(json.data.user_name, "익명");
-  assert.equal(json.data.displayName, "익명");
+  const alias = anonymousCommentAlias(POLL_ID, 'account', AUTH_USER_ID);
+  assert.equal(database.comments[0].user_name, alias);
+  assert.equal(json.data.user_name, alias);
+  assert.equal(json.data.displayName, alias);
   assert.ok(!Object.hasOwn(json.data, "avatar_url"));
   assert.ok(!Object.hasOwn(json.data, "nickname"));
   assert.equal(json.data.is_anonymous, true);
   assertNoAccountIdentity(json, { anonymous: true });
   const publicJson = await responseJson(await detail.GET(request(), context()), 200);
-  assert.equal(publicJson.comments[0].user_name, "익명");
+  assert.equal(publicJson.comments[0].user_name, alias);
   assert.ok(!Object.hasOwn(publicJson.comments[0], "avatar_url"));
   assert.ok(!Object.hasOwn(publicJson.comments[0], "nickname"));
   assertNoAccountIdentity(publicJson, { anonymous: true });
@@ -914,11 +1138,12 @@ test("anonymous reply retains parent relation, true user ID and anonymous public
   assert.equal(database.comments[1].user_id, AUTH_USER_ID);
   assert.equal(database.comments[1].is_anonymous, true);
   assert.equal(json.data.parent_id, COMMENT_ID);
-  assert.equal(json.data.user_name, "익명");
+  assert.equal(json.data.user_name, anonymousCommentAlias(POLL_ID, 'account', AUTH_USER_ID));
   assertNoAccountIdentity(json, { anonymous: true });
 });
 
 test("public comment projection ignores stored OAuth names for account rows and preserves legacy names", async () => {
+  database.profiles[0].show_avatar = true;
   database.comments.push(
     { id: COMMENT_ID, poll_id: POLL_ID, parent_id: null, is_hidden: false, is_anonymous: false,
       user_id: AUTH_USER_ID, user_name: "서버 사용자", text: "계정 의견", created_at: "2026-10-01" },
@@ -1152,6 +1377,8 @@ try {
   console.error = originalConsoleError;
   if (originalAdminKey === undefined) delete process.env.ADMIN_DASHBOARD_KEY;
   else process.env.ADMIN_DASHBOARD_KEY = originalAdminKey;
+  if (originalGuestSecret === undefined) delete process.env.GUEST_ID_SECRET;
+  else process.env.GUEST_ID_SECRET = originalGuestSecret;
 }
 console.log(`${tests.length - failed}/${tests.length} mocked API regression checks passed. No live DB mutations were performed.`);
 if (failed) process.exitCode = 1;

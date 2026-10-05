@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { AuthButton } from '@/components/auth-button';
+import { ProfileAvatar } from '@/components/profile-avatar';
 import { useAuth } from '@/components/auth-provider';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { ContentReportDialog, type ContentReportTarget } from '@/components/content-report-dialog';
@@ -140,7 +141,7 @@ function getOrCreateVoterId() {
 }
 
 export default function VotePage({ params }: { params: Promise<VotePageParams> }) {
-  const { user, profile, loading: authLoading, openLogin } = useAuth();
+  const { user, profile, openLogin } = useAuth();
   const resolvedParams = use(params);
   const id = resolvedParams.id;
 
@@ -158,6 +159,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [replyText, setReplyText] = useState('');
   const [commentIsAnonymous, setCommentIsAnonymous] = useState(false);
   const [replyIsAnonymous, setReplyIsAnonymous] = useState(false);
+  const commentInFlight = useRef(false);
+  const [commentPending, setCommentPending] = useState(false);
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
   const [shareFeedback, setShareFeedback] = useState<ShareFeedback | null>(null);
@@ -317,6 +320,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           dislike_count: comment.dislike_count,
           user_reaction: comment.user_reaction,
           user_name: comment.user_name,
+          avatar_url: comment.avatar_url,
           is_anonymous: comment.is_anonymous === true,
           text: comment.text,
           created_at: comment.created_at,
@@ -735,8 +739,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) { openLogin('의견을 남기려면 로그인이 필요해요.'); return; }
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || commentInFlight.current) return;
+    commentInFlight.current = true;
+    setCommentPending(true);
     setActionError('');
 
     try {
@@ -770,12 +775,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       } else {
         alert(`댓글 등록 실패: ${getErrorMessage(error)}`);
       }
-    }
+    } finally { commentInFlight.current = false; setCommentPending(false); }
   };
 
   const handleReplySubmit = async (parentId: string) => {
-    if (!user) { openLogin('답글을 남기려면 로그인이 필요해요.'); return; }
-    if (!replyText.trim()) return;
+    if (!replyText.trim() || commentInFlight.current) return;
+    commentInFlight.current = true;
+    setCommentPending(true);
     setActionError('');
 
     try {
@@ -813,7 +819,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       } else {
         alert(`답글 등록 실패: ${getErrorMessage(error)}`);
       }
-    }
+    } finally { commentInFlight.current = false; setCommentPending(false); }
   };
 
   const handleReaction = async (commentId: string, reaction: 'like' | 'dislike') => {
@@ -1124,7 +1130,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               </div>
             </div>
 
-            <form onSubmit={handleCommentSubmit} className="border-y border-line py-5 dark:border-line">
+            <form onSubmit={handleCommentSubmit} aria-busy={commentPending} className="border-y border-line py-5 dark:border-line">
               <label htmlFor="comment-input" className="text-sm font-bold text-ink dark:text-ink">왜 그렇게 골랐는지 알려주세요.</label>
               <p id="comment-input-help" className="mt-1 text-xs leading-relaxed text-muted dark:text-muted">다른 사람들과 선택한 이유를 나눠보세요.</p>
               <textarea
@@ -1133,10 +1139,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 rows={3}
                 value={inputText}
                 onChange={(event) => setInputText(event.target.value)}
-                readOnly={!user}
-                onFocus={() => { if (!user && !authLoading) openLogin('의견을 남기려면 로그인이 필요해요.'); }}
                 className="mt-3 w-full resize-none rounded-xl border border-line bg-surface p-4 text-sm font-medium leading-relaxed text-ink outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted dark:text-ink"
-                placeholder={user ? '선택한 이유를 남겨주세요.' : '의견을 남기려면 로그인해주세요.'}
+                placeholder="선택한 이유를 남겨주세요."
               />
               <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 {user ? (
@@ -1145,10 +1149,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                       <input id="comment-anonymous" type="checkbox" checked={commentIsAnonymous} onChange={(event) => setCommentIsAnonymous(event.target.checked)} aria-describedby="comment-author-display" className="h-4 w-4 shrink-0 accent-blue-600" />
                       익명으로 작성
                     </label>
-                    <p id="comment-author-display" className="break-words text-xs text-muted" aria-live="polite">공개 이름: {commentIsAnonymous ? '익명' : profile?.nickname ?? '닉네임 확인 중...'}</p>
+                    <p id="comment-author-display" className="break-words text-xs text-muted" aria-live="polite">{commentIsAnonymous ? '이 질문에서만 쓰는 익명 별명으로 작성돼요.' : `공개 이름: ${profile?.nickname ?? '닉네임 확인 중...'}`}</p>
                   </div>
-                ) : null}
-                <button type="submit" className="min-h-11 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas">의견 남기기</button>
+                ) : <p className="text-xs text-muted">익명으로 댓글이 작성돼요.</p>}
+                <button type="submit" disabled={commentPending} className="min-h-11 rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-white transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 disabled:opacity-60 dark:focus-visible:ring-offset-canvas">{commentPending ? '등록 중...' : '의견 남기기'}</button>
               </div>
             </form>
 
@@ -1160,9 +1164,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
             ) : (
               <div className="divide-y divide-slate-200 border-y border-line dark:divide-white/10 dark:border-line">
                 {parentComments.map((comment) => (
-                  <article key={comment.id} className="py-6 first:pt-5 last:pb-5 sm:px-1">
+                  <article key={comment.id} id={`comment-${comment.id}`} className="scroll-mt-20 py-6 first:pt-5 last:pb-5 sm:px-1">
                     {!comment.is_hidden ? <div className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 break-words text-xs font-black text-link dark:text-link">{comment.is_anonymous ? '익명' : comment.user_name || '익명 사용자'}</span>
+                      <div className="flex min-w-0 items-center gap-2"><ProfileAvatar name={comment.displayName || comment.user_name || '익명'} url={comment.is_anonymous ? null : comment.avatar_url} /><span className="min-w-0 break-words text-xs font-bold text-link">{comment.displayName || comment.user_name || '익명 사용자'}</span></div>
                       <time className="shrink-0 text-xs font-semibold text-muted dark:text-muted">{new Date(comment.created_at).toLocaleDateString('ko-KR')}</time>
                     </div> : null}
                     <p className={`mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-[15px] font-medium leading-7 ${comment.is_hidden ? 'text-muted dark:text-muted' : 'text-ink dark:text-ink'}`}>{comment.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : comment.text}</p>
@@ -1170,7 +1174,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     {!comment.is_hidden ? <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                       <button type="button" aria-pressed={comment.user_reaction === 'like'} onClick={() => handleReaction(String(comment.id), 'like')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${comment.user_reaction === 'like' ? 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-line text-muted hover:border-emerald-400 dark:border-line dark:text-muted'}`}><span>좋아요</span><span>{comment.like_count}</span>{comment.user_reaction === 'like' ? <span aria-hidden="true">✓</span> : null}</button>
                       <button type="button" aria-pressed={comment.user_reaction === 'dislike'} onClick={() => handleReaction(String(comment.id), 'dislike')} className={`inline-flex min-h-10 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${comment.user_reaction === 'dislike' ? 'border-rose-500 bg-rose-500/10 text-rose-700 dark:text-rose-300' : 'border-line text-muted hover:border-rose-400 dark:border-line dark:text-muted'}`}><span>싫어요</span><span>{comment.dislike_count}</span>{comment.user_reaction === 'dislike' ? <span aria-hidden="true">✓</span> : null}</button>
-                      <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => { if (!user) { openLogin('답글을 남기려면 로그인이 필요해요.'); return; } setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id)); }} className="min-h-10 rounded-xl border border-line px-3 py-1.5 font-bold text-muted transition hover:border-link hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:border-line dark:text-muted dark:focus-visible:ring-offset-canvas">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
+                      <button type="button" aria-expanded={replyTargetId === String(comment.id)} aria-controls={`reply-editor-${comment.id}`} onClick={() => setReplyTargetId(replyTargetId === String(comment.id) ? null : String(comment.id))} className="min-h-10 rounded-xl border border-line px-3 py-1.5 font-bold text-muted transition hover:border-link hover:text-link focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:border-line dark:text-muted dark:focus-visible:ring-offset-canvas">{replyTargetId === String(comment.id) ? '답글 닫기' : '답글'}</button>
                       <button type="button" onClick={() => setReportTarget({ type: 'comment', id: String(comment.id), label: '의견' })} aria-label="이 의견 신고하기" className="min-h-11 rounded-xl px-3 text-muted hover:text-ink dark:text-muted dark:hover:text-ink">신고</button>
                     </div> : null}
 
@@ -1179,24 +1183,24 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                         <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
                           <label htmlFor={`reply-input-${comment.id}`} className="sr-only">답글 내용</label>
                           <input id={`reply-input-${comment.id}`} value={replyText} onChange={(event) => setReplyText(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-xl border border-line bg-surface px-3 py-2.5 text-sm outline-none transition placeholder:text-muted focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted" placeholder="짧게 답글을 남겨보세요." />
-                          <button type="button" onClick={() => void handleReplySubmit(String(comment.id))} className="min-h-11 rounded-xl bg-primary px-4 py-2 text-xs font-black text-white transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas">답글 남기기</button>
+                          <button type="button" disabled={commentPending} aria-busy={commentPending} onClick={() => void handleReplySubmit(String(comment.id))} className="min-h-11 rounded-xl bg-primary px-4 py-2 text-xs font-black text-white transition hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 disabled:opacity-60 dark:focus-visible:ring-offset-canvas">{commentPending ? '등록 중...' : '답글 남기기'}</button>
                         </div>
-                        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                        {user ? <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                           <label htmlFor={`reply-anonymous-${comment.id}`} className="flex min-h-11 cursor-pointer items-center gap-2 text-sm font-medium text-ink">
                             <input id={`reply-anonymous-${comment.id}`} type="checkbox" checked={replyIsAnonymous} onChange={(event) => setReplyIsAnonymous(event.target.checked)} aria-describedby={`reply-author-display-${comment.id}`} className="h-4 w-4 shrink-0 accent-blue-600" />
                             익명으로 작성
                           </label>
-                          <p id={`reply-author-display-${comment.id}`} className="min-w-0 break-words text-xs text-muted" aria-live="polite">공개 이름: {replyIsAnonymous ? '익명' : profile?.nickname ?? '닉네임 확인 중...'}</p>
-                        </div>
+                          <p id={`reply-author-display-${comment.id}`} className="min-w-0 break-words text-xs text-muted" aria-live="polite">{replyIsAnonymous ? '이 질문에서만 쓰는 익명 별명으로 작성돼요.' : `공개 이름: ${profile?.nickname ?? '닉네임 확인 중...'}`}</p>
+                        </div> : <p className="mt-2 text-xs text-muted">익명으로 답글이 작성돼요.</p>}
                       </div>
                     ) : null}
 
                     {(repliesByParent.get(String(comment.id)) ?? []).length > 0 ? (
                       <div className="mt-5 divide-y divide-slate-200 border-l-2 border-blue-500/20 pl-3 dark:divide-white/10 sm:pl-5">
                         {(repliesByParent.get(String(comment.id)) ?? []).map((reply) => (
-                          <div key={reply.id} className="py-4 first:pt-1 last:pb-1">
+                          <div key={reply.id} id={`comment-${reply.id}`} className="scroll-mt-20 py-4 first:pt-1 last:pb-1">
                             {!reply.is_hidden ? <div className="flex items-center justify-between gap-3">
-                              <span className="min-w-0 break-words text-xs font-bold text-link dark:text-link">답글 · {reply.is_anonymous ? '익명' : reply.user_name || '익명 사용자'}</span>
+                              <div className="flex min-w-0 items-center gap-2"><ProfileAvatar name={reply.displayName || reply.user_name || '익명'} url={reply.is_anonymous ? null : reply.avatar_url} size={24} /><span className="min-w-0 break-words text-xs font-bold text-link">답글 · {reply.displayName || reply.user_name || '익명 사용자'}</span></div>
                               <time className="shrink-0 text-xs font-semibold text-muted dark:text-muted">{new Date(reply.created_at).toLocaleDateString('ko-KR')}</time>
                             </div> : null}
                             <p className={`mt-2 max-w-[68ch] whitespace-pre-wrap break-words text-sm font-medium leading-6 ${reply.is_hidden ? 'text-muted dark:text-muted' : 'text-ink dark:text-muted'}`}>{reply.is_hidden ? HIDDEN_COMMENT_PLACEHOLDER : reply.text}</p>
