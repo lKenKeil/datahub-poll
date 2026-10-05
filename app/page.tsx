@@ -3,9 +3,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { BrandHomeLink } from '@/components/brand-home-link';
-import { ThemeToggle } from '@/components/theme-toggle';
-import { AuthButton } from '@/components/auth-button';
+import { SiteHeader } from '@/components/site-header';
+import { OfficialStatisticCard } from '@/components/official-statistic-card';
 import { BRAND } from '@/lib/brand';
 import { ALL_CATEGORY_PRESENTATION, CATEGORY_PRESENTATION, type CategoryPresentation } from '@/lib/category-presentation';
 import { trackPollCardClicked } from '@/lib/analytics';
@@ -142,29 +141,6 @@ function formatRelativeTime(value?: string) {
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}일 전`;
   return created.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
-}
-
-function readLatestValue(stat: OfficialStatistic) {
-  const raw = (stat.metadata as Record<string, unknown> | null | undefined)?.latest_value;
-  return typeof raw === 'number' ? raw : null;
-}
-
-function readLatestYear(stat: OfficialStatistic) {
-  const raw = (stat.metadata as Record<string, unknown> | null | undefined)?.latest_year;
-  return typeof raw === 'string' ? raw : null;
-}
-
-function formatStatValue(stat: OfficialStatistic, value: number) {
-  const indicatorId = (stat.metadata as Record<string, unknown> | null | undefined)?.indicator_id;
-  if (indicatorId === 'SP.POP.TOTL') return `${Math.round(value).toLocaleString()} 명`;
-  if (
-    indicatorId === 'IT.NET.USER.ZS' ||
-    indicatorId === 'SL.UEM.1524.ZS' ||
-    indicatorId === 'SL.UEM.TOTL.ZS' ||
-    indicatorId === 'FP.CPI.TOTL.ZG'
-  ) return `${value.toFixed(2)}%`;
-  if (indicatorId === 'IT.CEL.SETS.P2' || indicatorId === 'IT.NET.BBND.P2') return `${value.toFixed(2)} / 100명`;
-  return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
 }
 
 type FeaturedBattle = {
@@ -336,6 +312,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<HomeCategory>('전체');
   const [loading, setLoading] = useState(true);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState(false);
   const [openStatId, setOpenStatId] = useState<string | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRequestGenerationRef = useRef(0);
@@ -343,6 +320,15 @@ export default function Home() {
 
   const officialIdSet = useMemo(() => new Set(POLLS.map((poll) => poll.id)), []);
   const normalizedSearch = useMemo(() => searchTerm.toLowerCase().trim(), [searchTerm]);
+
+  useEffect(() => {
+    // Search from the shared data-detail header uses the existing home filter.
+    const query = new URLSearchParams(window.location.search);
+    queueMicrotask(() => {
+      if (query.has('q')) setSearchTerm(query.get('q') ?? '');
+      if (query.get('category') === 'data') setActiveCategory('데이터');
+    });
+  }, []);
 
   const fetchPolls = useCallback(async (options?: { silent?: boolean }) => {
     const generation = ++pollRequestGenerationRef.current;
@@ -379,11 +365,15 @@ export default function Home() {
       const response = await fetch('/api/official-statistics', { cache: 'no-store' });
       const json = (await response.json()) as { data?: OfficialStatistic[]; error?: string };
       if (!response.ok) {
-        console.error('공식 통계 로딩 실패:', json.error ?? 'unknown error');
+        setStatsError(true);
         if (!silent) setOfficialStats([]);
         return;
       }
       setOfficialStats(json.data ?? []);
+      setStatsError(false);
+    } catch {
+      setStatsError(true);
+      if (!silent) setOfficialStats([]);
     } finally {
       if (!silent) setStatsLoading(false);
     }
@@ -501,7 +491,7 @@ export default function Home() {
 
   const filteredOfficialStats = useMemo(() => {
     return officialStats.filter((stat) => {
-      const categoryMatch = activeCategory === '전체' || getInterestCategory(stat) === activeCategory;
+      const categoryMatch = activeCategory === '데이터' || activeCategory === '전체' || getInterestCategory(stat) === activeCategory;
       const text = `${stat.title} ${stat.summary ?? ''} ${(stat.tags ?? []).join(' ')}`.toLowerCase();
       const searchMatch = !normalizedSearch || text.includes(normalizedSearch);
       return categoryMatch && searchMatch;
@@ -552,41 +542,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen w-full min-w-0 max-w-full bg-canvas text-ink dark:bg-canvas dark:text-ink selection:bg-blue-500/30">
-      <nav className="sticky top-0 z-50 w-full min-w-0 max-w-full border-b border-line bg-canvas/95 backdrop-blur-xl">
-        <div className="mx-auto flex w-full min-w-0 max-w-[1440px] items-center gap-2 px-4 py-2.5 sm:gap-3 sm:px-6 lg:px-8">
-          <BrandHomeLink showDescriptor />
-          <label className="relative ml-auto hidden min-w-0 w-full max-w-xl md:block">
-            <span className="sr-only">투표 검색</span>
-            <span aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">⌕</span>
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              className="min-h-11 w-full min-w-0 max-w-full rounded-xl border border-line bg-surface-muted py-2.5 pl-10 pr-4 text-sm font-medium outline-none transition focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted"
-              placeholder="궁금한 질문을 찾아보세요"
-            />
-          </label>
-          <Link href="/create" className="ml-auto inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-primary px-3 text-sm font-bold text-white transition-colors hover:bg-primary-hover md:ml-0 sm:px-4">
-            <span className="sm:hidden">+ 질문</span>
-            <span className="hidden sm:inline">+ 질문 올리기</span>
-          </Link>
-          <AuthButton />
-          <ThemeToggle />
-        </div>
-        <div className="w-full min-w-0 max-w-full px-4 pb-3 md:hidden">
-          <label className="relative block min-w-0 max-w-full">
-            <span className="sr-only">투표 검색</span>
-            <span aria-hidden="true" className="absolute left-4 top-1/2 -translate-y-1/2 text-muted">⌕</span>
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              className="min-h-11 w-full min-w-0 max-w-full rounded-xl border border-line bg-surface-muted py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:border-link focus:ring-2 focus:ring-link/20 dark:border-line dark:bg-surface-muted"
-              placeholder="질문 검색"
-            />
-          </label>
-        </div>
-      </nav>
+      <SiteHeader searchTerm={searchTerm} onSearchChange={setSearchTerm} />
 
       <main className="mx-auto w-full min-w-0 max-w-[1440px] space-y-12 px-4 py-6 sm:px-6 md:space-y-16 md:py-10 lg:px-8">
         <div className="space-y-4 md:space-y-6">
@@ -604,7 +560,7 @@ export default function Home() {
                       type="button"
                       onClick={() => setActiveCategory(category)}
                       aria-pressed={isActive}
-                      aria-controls="latest-polls"
+                      aria-controls={category === '데이터' ? 'official-intel-feed' : 'latest-polls'}
                       aria-label={`${display.label}: ${display.description}`}
                       className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-link focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${isActive ? 'border-primary bg-primary text-white shadow-sm' : isDataCategory ? 'border-dashed border-line bg-transparent text-muted hover:border-link hover:text-link dark:border-line dark:text-muted' : 'border-line bg-surface text-ink hover:border-link hover:text-link dark:border-line dark:bg-surface-muted dark:text-muted'}`}
                     >
@@ -617,7 +573,7 @@ export default function Home() {
               <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-canvas via-canvas/95 to-transparent md:hidden" />
             </div>
           </section>
-          <section className="relative min-w-0 max-w-full overflow-hidden rounded-3xl border border-line bg-hero p-5 md:p-8 lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)] lg:items-start lg:gap-x-8 lg:gap-y-5">
+          {activeCategory !== '데이터' ? <section className="relative min-w-0 max-w-full overflow-hidden rounded-3xl border border-line bg-hero p-5 md:p-8 lg:grid lg:grid-cols-[minmax(0,1.08fr)_minmax(380px,0.92fr)] lg:items-start lg:gap-x-8 lg:gap-y-5">
             {featuredBattle ? (
               <>
                 <div className="relative min-w-0 lg:col-start-1 lg:row-start-1">
@@ -691,10 +647,10 @@ export default function Home() {
                 <Link href="/create" className="mt-4 inline-flex min-h-11 items-center rounded-xl bg-primary px-5 text-sm font-black text-white">첫 질문 올리기 →</Link>
               </div>
             )}
-          </section>
+          </section> : null}
         </div>
 
-        {loading || popularPolls.length > 0 ? (
+        {activeCategory !== '데이터' && (loading || popularPolls.length > 0) ? (
         <section id="popular-polls" className="scroll-mt-32 space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -735,7 +691,7 @@ export default function Home() {
         </section>
         ) : null}
 
-        {loading || risingPolls.length > 0 ? (
+        {activeCategory !== '데이터' && (loading || risingPolls.length > 0) ? (
         <section className="space-y-5">
           <div>
             <h2 className="text-2xl font-bold tracking-tight md:text-3xl">지금 뜨는 투표</h2>
@@ -777,7 +733,7 @@ export default function Home() {
         </section>
         ) : null}
 
-        <section id="latest-polls" className="space-y-5">
+        {activeCategory !== '데이터' ? <section id="latest-polls" className="space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h2 className="text-2xl font-bold tracking-tight md:text-3xl">{latestSectionTitle}</h2>
@@ -830,60 +786,32 @@ export default function Home() {
               ))}
             </div>
           )}
-        </section>
+        </section> : null}
 
-        <section id="official-intel-feed" className="space-y-4 border-t border-line pt-6">
+        <section id="official-intel-feed" aria-labelledby="official-heading" className={`min-w-0 space-y-4 ${activeCategory === '데이터' ? '' : 'border-t border-line pt-6'}`}>
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold tracking-tight md:text-xl">데이터로 보는 세상</h2>
-              <p className="mt-1 text-sm text-muted">질문 뒤의 흐름은 공식 통계로 살펴보세요.</p>
+              {activeCategory === '데이터' ? <h1 id="official-heading" className="text-2xl font-bold tracking-tight md:text-3xl">데이터로 보는 세상</h1> : <h2 id="official-heading" className="text-lg font-bold tracking-tight md:text-xl">데이터로 보는 세상</h2>}
+              <p className="mt-1 text-sm text-muted">{activeCategory === '데이터' ? '공식 통계를 쉽고 빠르게 살펴보세요. 수치와 최근 흐름을 함께 확인할 수 있어요.' : '질문 뒤의 흐름은 공식 통계로 살펴보세요.'}</p>
             </div>
             <span className="text-xs font-medium text-muted">공식 출처 기반</span>
           </div>
           {statsLoading ? (
             <div className="text-sm font-bold text-muted">공식 통계를 불러오는 중...</div>
+          ) : statsError ? (
+            <div role="status" className="space-y-2 py-4 text-sm text-muted">
+              <p>공식 통계를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+              <button type="button" onClick={() => void fetchOfficialStats()} className="min-h-11 rounded-xl border border-line px-4 font-bold text-ink">다시 불러오기</button>
+            </div>
           ) : filteredOfficialStats.length === 0 ? (
             <div className="py-4 text-sm text-muted">
               검색과 관심사 조건에 맞는 공식 통계가 없어요.
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredOfficialStats.slice(0, 6).map((item) => {
-                const latestValue = readLatestValue(item);
-                const latestYear = readLatestYear(item);
-                const opened = openStatId === item.id;
-                return (
-                  <article key={item.id} className="min-w-0 border-t border-line py-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-muted">{item.category}</span>
-                      <span className="text-xs font-medium text-muted dark:text-muted">{latestYear ? `최근 ${latestYear}` : item.published_at ?? item.observed_at ?? '최근 공개'}</span>
-                    </div>
-                    <h3 className="mt-2 text-base font-bold leading-snug text-ink">{item.title}</h3>
-                    {latestValue !== null ? (
-                      <p className="mt-2 text-xl font-bold text-ink">{formatStatValue(item, latestValue)}</p>
-                    ) : null}
-                    {item.summary ? <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted">{item.summary}</p> : null}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setOpenStatId(opened ? null : item.id)}
-                        className="min-h-11 rounded-xl border border-line px-3 py-1.5 text-xs font-medium text-muted hover:border-link hover:text-ink"
-                      >
-                        {opened ? '접기' : '요약 보기'}
-                      </button>
-                      <Link href={`/stats/${item.id}`} className="inline-flex min-h-11 items-center rounded-xl px-3 py-1.5 text-xs font-medium text-muted hover:bg-surface-muted hover:text-ink">
-                        관련 데이터 보기
-                      </Link>
-                    </div>
-                    {opened ? (
-                      <div className="mt-3 space-y-2 border-l-2 border-line pl-3">
-                        {item.methodology ? <p className="text-xs text-ink dark:text-muted"><span className="font-black">방법론:</span> {item.methodology}</p> : null}
-                        {item.confidence_note ? <p className="text-xs text-ink dark:text-muted"><span className="font-black">신뢰 참고:</span> {item.confidence_note}</p> : null}
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              })}
+            <div className="grid items-stretch gap-x-6 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+              {filteredOfficialStats.slice(0, activeCategory === '데이터' ? 8 : 6).map((item) => (
+                <OfficialStatisticCard key={item.id} item={item} opened={openStatId === item.id} onToggle={() => setOpenStatId(openStatId === item.id ? null : item.id)} />
+              ))}
             </div>
           )}
         </section>
