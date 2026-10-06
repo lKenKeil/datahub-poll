@@ -9,9 +9,9 @@ export function isAccountVotingMigrationMissing(error: unknown) {
     : {};
   const message = record.message ?? "";
   return ((record.code === "PGRST202" || record.code === "42883")
-      && /(?:cast|change|claim)_authenticated_poll_vote/.test(message))
+      && /(?:cast|change|claim)_(?:authenticated|guest)_poll_vote/.test(message))
     || ((record.code === "42703" || record.code === "PGRST204")
-      && message.includes("user_id"))
+      && (message.includes("user_id") || message.includes("guest_id_hash")))
     || ((record.code === "42P01" || record.code === "PGRST205")
       && message.includes("poll_votes"));
 }
@@ -19,8 +19,8 @@ export function isAccountVotingMigrationMissing(error: unknown) {
 export function accountVotingMigrationResponse() {
   return NextResponse.json(
     {
-      code: "ACCOUNT_VOTING_MIGRATION_REQUIRED",
-      error: "계정 투표 기능을 준비 중입니다. 잠시 후 다시 시도해주세요.",
+      code: "DUAL_VOTING_MIGRATION_REQUIRED",
+      error: "투표 기능을 준비 중입니다. 잠시 후 다시 시도해주세요.",
     },
     { status: 503, headers: PRIVATE_VOTE_HEADERS },
   );

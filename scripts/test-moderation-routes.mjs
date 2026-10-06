@@ -215,27 +215,46 @@ function supabaseClient(role) {
         return { data: { id: poll.id, votes: [...poll.votes], participants: poll.participants, option_index: index, changed }, error: null };
       }
       // Contract model only: real SQL locking/atomicity is tested separately.
-      if (["cast_authenticated_poll_vote", "change_authenticated_poll_vote", "claim_authenticated_poll_vote"].includes(name)) {
+      if (["cast_authenticated_poll_vote", "change_authenticated_poll_vote", "claim_authenticated_poll_vote",
+        "cast_guest_poll_vote", "change_guest_poll_vote", "claim_guest_poll_vote"].includes(name)) {
         assert.equal(role, "service");
-        assert.ok(payload.p_user_id);
+        const account = name.includes("_authenticated_");
+        if (account) assert.ok(payload.p_user_id);
+        else assert.match(payload.p_guest_id_hash, /^[0-9a-f]{64}$/);
         const poll = database.polls.find(row => row.id === payload.p_poll_id);
         if (!poll || poll.is_hidden) return { data: null, error: { code: "P0002", message: "CONTENT_NOT_AVAILABLE" } };
-        let vote = database.poll_votes.find(row => row.poll_id === poll.id && row.user_id === payload.p_user_id);
-        if (name === "claim_authenticated_poll_vote") {
+        const guestVote = payload.p_guest_id_hash
+          ? database.poll_votes.find(row => row.poll_id === poll.id && row.guest_id_hash === payload.p_guest_id_hash) : null;
+        let vote = account ? database.poll_votes.find(row => row.poll_id === poll.id && row.user_id === payload.p_user_id) : guestVote;
+        if (name.startsWith("claim_")) {
+          if (account && !vote && guestVote?.user_id != null && guestVote.user_id !== payload.p_user_id) {
+            return { data: null, error: { code: '42501', message: 'VOTE_REQUIRES_ACCOUNT' } };
+          }
           if (!vote) {
-            vote = database.poll_votes.find(row => row.poll_id === poll.id && row.voter_id === payload.p_legacy_voter_id && row.user_id == null);
-            if (vote) vote.user_id = payload.p_user_id;
+            vote = account && guestVote?.user_id == null ? guestVote : null;
+            if (!vote && !guestVote) vote = database.poll_votes.find(row => row.poll_id === poll.id
+              && row.voter_id === payload.p_legacy_voter_id && row.user_id == null && row.guest_id_hash == null);
+            if (vote) {
+              if (account) vote.user_id = payload.p_user_id;
+              if (payload.p_guest_id_hash) vote.guest_id_hash = payload.p_guest_id_hash;
+            }
+          } else if (account && vote.guest_id_hash == null && !guestVote && payload.p_guest_id_hash) {
+            vote.guest_id_hash = payload.p_guest_id_hash;
           }
           return { data: vote ? [{ id: poll.id, votes: [...poll.votes], participants: poll.participants, option_index: vote.option_index }] : [], error: null };
         }
-        if (name === "cast_authenticated_poll_vote" && vote) return { data: null, error: { code: "23505", message: "ALREADY_VOTED" } };
-        if (name === "change_authenticated_poll_vote" && !vote) return { data: null, error: { code: "P0002", message: "Existing vote not found." } };
+        if (name.startsWith("cast_") && (vote || guestVote)) return { data: null, error: { code: "23505", message: "POLL_ALREADY_VOTED" } };
+        if (name.startsWith("change_") && !vote) return { data: null, error: { code: "P0002", message: "Existing vote not found." } };
+        if (!account && name.startsWith("change_") && vote.user_id != null) {
+          return { data: null, error: { code: "P0001", message: "VOTE_REQUIRES_ACCOUNT" } };
+        }
         const index = payload.p_option_index ?? payload.p_new_option_index;
         const changed = !vote || vote.option_index !== index;
         if (changed) {
           if (vote) poll.votes[vote.option_index] -= 1;
           else {
-            vote = { id: database.poll_votes.length + 1, poll_id: poll.id, user_id: payload.p_user_id, voter_id: `mock-server-ledger-${database.poll_votes.length + 1}` };
+            vote = { id: database.poll_votes.length + 1, poll_id: poll.id, user_id: account ? payload.p_user_id : null,
+              guest_id_hash: payload.p_guest_id_hash ?? null, voter_id: `mock-server-ledger-${database.poll_votes.length + 1}` };
             database.poll_votes.push(vote);
             poll.participants += 1;
           }
@@ -360,7 +379,8 @@ function loadModule(file) {
 }
 
 function request(method = "GET", body, headers = {}, ip) {
-  const requestHeaders = { "x-forwarded-for": ip ?? `203.0.113.${clientNumber++}`, ...headers };
+  const requestHeaders = { "x-forwarded-for": ip ?? `198.18.${Math.floor(clientNumber / 250) % 250}.${clientNumber++ % 250 + 1}`,
+    ...(authUser ? { cookie: "sb-test-auth-token=mock-session" } : {}), ...headers };
   if (body !== undefined && !(body instanceof FormData)) requestHeaders["content-type"] = "application/json";
   return new Request("https://example.invalid/api/test", {
     method, headers: requestHeaders,
@@ -985,16 +1005,16 @@ test("logout preserves old authorship while new comments become separate guest a
   assert.ok(database.comments[1].guest_id_hash);
 });
 
-test("anonymous voting/change require a verified account despite voter identity", async () => {
+test("guest voting ignores caller voter identity and supports changing its own choice", async () => {
   authUser = null;
   const voteBody = { optionIndex: 0, voterId: VOTER_ID };
-  await responseJson(await votes.POST(request("POST", voteBody), context()), 401);
-  await responseJson(await votes.PATCH(request("PATCH", { ...voteBody, optionIndex: 1 }), context()), 401);
-  await responseJson(await voteClaim.POST(request("POST", { voterId: VOTER_ID }), context()), 401);
-  assert.deepEqual(database.polls[0].votes, [0, 0]);
-  assert.equal(database.polls[0].participants, 0);
-  assert.equal(database.poll_votes.length, 0);
-  assert.equal(calls.filter(call => call.rpc).length, 0);
+  await responseJson(await votes.POST(request("POST", voteBody, { cookie: GUEST_COOKIE }), context()), 200);
+  await responseJson(await votes.PATCH(request("PATCH", { ...voteBody, optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.deepEqual(database.polls[0].votes, [0, 1]);
+  assert.equal(database.polls[0].participants, 1);
+  assert.equal(database.poll_votes.length, 1);
+  assert.notEqual(database.poll_votes[0].voter_id, VOTER_ID);
+  assert.deepEqual(calls.filter(call => call.rpc).map(call => call.rpc), ['cast_guest_poll_vote', 'change_guest_poll_vote']);
 });
 
 test("anonymous reporting remains available independently of Auth", async () => {
@@ -1630,8 +1650,9 @@ test('anonymous Auth sessions and failed verification cannot cast or change vote
     if (scenario === 'anonymous') authUser.is_anonymous = true;
     if (scenario === 'error') authFailure = { message: RAW_ERROR };
     if (scenario === 'throw') authThrows = true;
-    assertNoSecrets(await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 401));
-    await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }), context()), 401);
+    const expected = scenario === 'anonymous' ? 401 : 503;
+    assertNoSecrets(await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), expected));
+    await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }), context()), expected);
     assert.equal(calls.filter(row => row.rpc).length, 0);
   }
 });
@@ -1701,7 +1722,9 @@ test('legacy conflict prefers account vote, preserves both historical rows, and 
   const seen = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context()), 200);
   assert.equal(seen.viewerVote.optionIndex, 1);
   await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 409);
-  assert.equal(JSON.stringify(database.poll_votes), before);
+  // Claim may bind the account's empty browser hash without touching its
+  // option or either historical row's aggregate contribution.
+  assert.equal(JSON.stringify(database.poll_votes.map(row => ({ ...row, guest_id_hash: undefined }))), before);
   assert.deepEqual(database.polls[0].votes, [8, 4]);
 });
 
@@ -1738,7 +1761,7 @@ test('account mutations reject cross-site requests and invalid claims without RP
 test('missing account migration and raw vote/claim errors remain safe', async () => {
   rpcFailure = { code: 'PGRST202', message: `cast_authenticated_poll_vote ${RAW_ERROR}` };
   const missing = await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 503);
-  assert.equal(missing.code, 'ACCOUNT_VOTING_MIGRATION_REQUIRED');
+  assert.equal(missing.code, 'DUAL_VOTING_MIGRATION_REQUIRED');
   assertNoSecrets(missing);
   rpcFailure = { code: 'PGRST202', message: `claim_authenticated_poll_vote ${RAW_ERROR}` };
   assertNoSecrets(await responseJson(await voteClaim.POST(request('POST', { voterId: VOTER_ID }), context()), 503));
@@ -1752,6 +1775,205 @@ test('account API responses are private and noncacheable', async () => {
   const created = await votes.POST(request('POST', { optionIndex: 0 }), context());
   const viewed = await detail.GET(request(), context());
   for (const response of [created, viewed]) assert.match(response.headers.get('cache-control'), /private.*no-store/);
+});
+
+function responseGuestCookie(response) {
+  const cookie = response.headers.get('set-cookie') ?? '';
+  const match = cookie.match(/askio_guest_id=([^;]+)/);
+  assert.ok(match, 'Response did not establish a guest cookie.');
+  assert.match(cookie, /HttpOnly/i);
+  assert.match(cookie, /SameSite=lax/i);
+  assert.match(cookie, /Secure/i);
+  return `askio_guest_id=${match[1]}`;
+}
+
+test('detail establishes a cookie before guest voting; refresh preserves only safe viewer state', async () => {
+  authUser = null;
+  const first = await detail.GET(request(), context());
+  const cookie = responseGuestCookie(first);
+  assert.equal((await responseJson(first, 200)).viewerVote, null);
+  assert.equal(calls.filter(row => row.rpc).length, 0);
+  const vote = await responseJson(await votes.POST(request('POST', {
+    optionIndex: 1, guest_id_hash: 'a'.repeat(64), guestId: REPORTER_ID, user_id: AUTH_USER_ID, voterId: VOTER_ID,
+  }, { cookie }), context()), 200);
+  const row = database.poll_votes[0];
+  const commentIdentity = getGuestCommentIdentity(request('GET', undefined, { cookie }));
+  assert.match(row.guest_id_hash, /^[0-9a-f]{64}$/);
+  assert.notEqual(row.guest_id_hash, commentIdentity.hash);
+  assert.notEqual(row.guest_id_hash, 'a'.repeat(64));
+  assert.equal(row.user_id, null);
+  assert.notEqual(row.voter_id, VOTER_ID);
+  const refreshed = await detail.GET(request('GET', undefined, { cookie }), context());
+  const json = await responseJson(refreshed, 200);
+  assert.deepEqual(json.viewerVote, { optionIndex: 1 });
+  for (const result of [json, vote]) {
+    assertNoAccountIdentity(result);
+    assert.ok(!JSON.stringify(result).includes(row.guest_id_hash));
+    assert.ok(!JSON.stringify(result).includes(row.voter_id));
+    assert.ok(!JSON.stringify(result).includes(cookie.split('=')[1]));
+  }
+  assert.match(refreshed.headers.get('cache-control'), /private.*no-store/);
+});
+
+test('same guest duplicates and simultaneous RPC contracts add exactly one ballot', async () => {
+  authUser = null;
+  const responses = await Promise.all([0, 1].map(optionIndex => votes.POST(request('POST', { optionIndex }, { cookie: GUEST_COOKIE }), context())));
+  assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+  const before = JSON.stringify(database.polls[0]);
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 409);
+  assert.equal(database.poll_votes.length, 1);
+  assert.equal(database.polls[0].participants, 1);
+  assert.equal(database.polls[0].votes.reduce((sum, value) => sum + value, 0), 1);
+  assert.equal(JSON.stringify(database.polls[0]), before);
+});
+
+test('guest change preserves ledger identity and participant count, including same-option no-op', async () => {
+  authUser = null;
+  database.polls[0].votes = [20, 30];
+  database.polls[0].participants = 50;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
+  const rowId = database.poll_votes[0].id;
+  const changed = await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(changed.data.changed, true);
+  assert.deepEqual(database.polls[0].votes, [20, 31]);
+  assert.equal(database.polls[0].participants, 51);
+  assert.equal(database.poll_votes[0].id, rowId);
+  const noop = await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(noop.data.changed, false);
+  assert.deepEqual(database.polls[0].votes, [20, 31]);
+});
+
+test('guest-to-account claim needs no legacy ID and retains browser duplicate protection after logout', async () => {
+  authUser = null;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
+  const hash = database.poll_votes[0].guest_id_hash;
+  const id = database.poll_votes[0].id;
+  const aggregate = JSON.stringify({ votes: database.polls[0].votes, participants: database.polls[0].participants });
+  authUser = { id: AUTH_USER_ID, is_anonymous: false };
+  const claim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(claim.data.optionIndex, 0);
+  assert.equal(database.poll_votes[0].user_id, AUTH_USER_ID);
+  assert.equal(database.poll_votes[0].guest_id_hash, hash);
+  assert.equal(database.poll_votes[0].id, id);
+  assert.equal(database.poll_votes.length, 1);
+  assert.equal(JSON.stringify({ votes: database.polls[0].votes, participants: database.polls[0].participants }), aggregate);
+  authUser = null;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 409);
+  const denied = await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 409);
+  assert.equal(denied.code, 'VOTE_REQUIRES_ACCOUNT');
+  assert.deepEqual((await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200)).viewerVote, { optionIndex: 0 });
+  assert.equal(JSON.stringify({ votes: database.polls[0].votes, participants: database.polls[0].participants }), aggregate);
+});
+
+test('guest/account conflict prefers account without third vote or aggregate correction', async () => {
+  authUser = null;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
+  authUser = { id: AUTH_USER_ID, is_anonymous: false };
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: `askio_guest_id=${VOTER_ID}` }), context()), 200);
+  const before = JSON.stringify(database.polls[0]);
+  const ledger = JSON.stringify(database.poll_votes);
+  const claim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(claim.data.optionIndex, 1);
+  const viewed = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.deepEqual(viewed.viewerVote, { optionIndex: 1 });
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 409);
+  assert.equal(database.poll_votes.length, 2);
+  assert.equal(JSON.stringify(database.polls[0]), before);
+  assert.equal(JSON.stringify(database.poll_votes), ledger);
+});
+
+test('legacy-to-guest claim preserves original row and aggregates without exposing voter ID', async () => {
+  authUser = null;
+  database.polls[0].votes = [10, 8]; database.polls[0].participants = 18;
+  database.poll_votes.push({ id: 71, poll_id: POLL_ID, voter_id: VOTER_ID, user_id: null,
+    guest_id_hash: null, option_index: 1, created_at: '2026-09-01' });
+  const response = await voteClaim.POST(request('POST', { voterId: VOTER_ID }), context());
+  const cookie = responseGuestCookie(response);
+  const json = await responseJson(response, 200);
+  assert.equal(json.data.optionIndex, 1);
+  assert.equal(database.poll_votes[0].id, 71);
+  assert.equal(database.poll_votes[0].created_at, '2026-09-01');
+  assert.equal(database.poll_votes[0].user_id, null);
+  assert.match(database.poll_votes[0].guest_id_hash, /^[0-9a-f]{64}$/);
+  assert.deepEqual(database.polls[0].votes, [10, 8]);
+  assert.equal(database.polls[0].participants, 18);
+  assert.equal(database.poll_votes.length, 1);
+  assert.deepEqual((await responseJson(await detail.GET(request('GET', undefined, { cookie }), context()), 200)).viewerVote, { optionIndex: 1 });
+  assert.ok(!JSON.stringify(json).includes(VOTER_ID));
+});
+
+test('guest missing secret/schema never falls back to unsafe legacy mutations', async () => {
+  authUser = null;
+  delete process.env.GUEST_ID_SECRET;
+  try {
+    assertNoSecrets(await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 503));
+    assertNoSecrets(await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }), context()), 503));
+    await responseJson(await detail.GET(request(), context()), 200);
+    assert.equal(calls.filter(row => row.rpc).length, 0);
+  } finally { process.env.GUEST_ID_SECRET = 'mock-only-guest-identity-key-not-a-credential'; }
+  rpcFailure = { code: 'PGRST202', message: `cast_guest_poll_vote ${RAW_ERROR}` };
+  const missing = await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 503);
+  assert.equal(missing.code, 'DUAL_VOTING_MIGRATION_REQUIRED'); assertNoSecrets(missing);
+  assert.equal(calls.filter(row => row.rpc === 'increment_poll_vote').length, 0);
+});
+
+test('missing session allows guest; supplied invalid Auth or Auth outage never downgrades to guest', async () => {
+  authUser = null;
+  authFailure = { name: 'AuthSessionMissingError', status: 400 };
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
+  reset(); authUser = null;
+  authFailure = { name: 'AuthSessionMissingError', status: 400 };
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: 'sb-test-auth-token=invalid' }), context()), 401);
+  assert.equal(calls.filter(row => row.rpc).length, 0);
+  authFailure = { name: 'AuthRetryableFetchError', status: 503 };
+  assertNoSecrets(await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 503));
+  authThrows = true;
+  await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 503);
+  assert.equal(calls.filter(row => row.rpc).length, 0);
+});
+
+test('guest cross-site and IP mutation rate limits stay enforced independently of cookie rotation', async () => {
+  authUser = null;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE, origin: 'https://evil.invalid' }), context()), 403);
+  await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE, 'sec-fetch-site': 'cross-site' }), context()), 403);
+  assert.equal(calls.filter(row => row.rpc).length, 0);
+  for (let index = 0; index < 20; index += 1) {
+    await responseJson(await votes.POST(request('POST', { optionIndex: 'invalid' }, {}, '198.51.100.214'), context()), 400);
+  }
+  const limited = await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }, '198.51.100.214'), context());
+  await responseJson(limited, 429);
+  assert.match(limited.headers.get('cache-control'), /private.*no-store/);
+  assert.equal(calls.filter(row => row.rpc).length, 0);
+});
+
+test('public question remains readable during Auth failure without fallback viewer or guest identity', async () => {
+  database.poll_votes.push({ poll_id: POLL_ID, voter_id: VOTER_ID, user_id: null, guest_id_hash: null, option_index: 1 });
+  for (const scenario of ['expired', 'outage', 'throws']) {
+    authFailure = scenario === 'expired' ? { name: 'AuthApiError', status: 401 }
+      : scenario === 'outage' ? { name: 'AuthRetryableFetchError', status: 503 } : null;
+    authThrows = scenario === 'throws';
+    const response = await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context());
+    const json = await responseJson(response, 200);
+    assert.ok(json.poll); assert.equal(json.viewerVote, null);
+    assert.equal(response.headers.get('set-cookie'), null);
+    assert.equal(calls.filter(row => row.rpc).length, 0);
+    assertNoAccountIdentity(json);
+  }
+});
+
+test('another signed-in account cannot see a cookie-bound ballot already claimed by a different account', async () => {
+  authUser = null;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 200);
+  authUser = { id: AUTH_USER_ID, is_anonymous: false };
+  await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+  authUser = { id: REPORTER_ID, is_anonymous: false };
+  const json = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(json.viewerVote, null);
+  const failedClaim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 409);
+  assert.equal(failedClaim.code, 'VOTE_REQUIRES_ACCOUNT');
+  assert.equal(database.poll_votes.length, 1);
+  assert.deepEqual(database.polls[0].votes, [0, 1]);
+  assertNoAccountIdentity(json);
 });
 
 let failed = 0;

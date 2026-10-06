@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseMutationClient } from "@/lib/supabase-server";
-import { requireAuthenticatedUser } from "@/lib/auth-server";
+import { getPollVoteActor, withVoteActorCookie } from "@/lib/poll-vote-identity";
 import {
   accountVotingMigrationResponse,
   isAccountVotingMigrationMissing,
@@ -22,10 +22,12 @@ type VoteBody = {
 };
 
 export async function POST(request: Request, context: Context) {
-  const auth = await requireAuthenticatedUser(request);
-  if (!auth.user) return auth.response;
   const rateLimitResponse = enforceRateLimit(request, RATE_LIMIT_POLICIES.voteMutation);
   if (rateLimitResponse) return withPrivateVoteHeaders(rateLimitResponse);
+  const identity = await getPollVoteActor(request);
+  if (!identity.actor) return identity.response;
+  const actor = identity.actor;
+  const finish = (response: NextResponse) => withVoteActorCookie(response, actor, request);
 
   try {
     const { id } = await context.params;
@@ -87,16 +89,22 @@ export async function POST(request: Request, context: Context) {
     const rpcPayload = {
       p_poll_id: id,
       p_option_index: optionIndex as number,
-      // Only the verified Auth user reaches this service-only RPC. Request
-      // bodies and x-voter-id are never a new vote identity.
-      p_user_id: auth.user.id,
+      // Identity comes only from verified Auth and a server HMAC of the cookie.
+      // Body user_id/guest_id_hash/voterId never selects a new vote actor.
+      ...(actor.userId ? { p_user_id: actor.userId } : {}),
+      p_guest_id_hash: actor.guestHash,
     };
 
-    const { data: rpcData, error: rpcError } = await supabaseMutation.rpc("cast_authenticated_poll_vote", rpcPayload);
+    const { data: rpcData, error: rpcError } = await supabaseMutation.rpc(
+      actor.userId ? "cast_authenticated_poll_vote" : "cast_guest_poll_vote", rpcPayload,
+    );
 
     if (rpcError) {
       if (isAccountVotingMigrationMissing(rpcError)) return accountVotingMigrationResponse();
-      if (rpcError.code === "23505") {
+      if (rpcError.message === "VOTE_REQUIRES_ACCOUNT") {
+        return NextResponse.json({ code: "VOTE_REQUIRES_ACCOUNT", error: "이 브라우저의 선택은 다른 계정에 연결되어 있습니다. 해당 계정으로 로그인해주세요." }, { status: 409, headers: PRIVATE_VOTE_HEADERS });
+      }
+      if (rpcError.code === "23505" || rpcError.message === "POLL_ALREADY_VOTED") {
         return NextResponse.json({ error: "이미 참여한 질문입니다. 새로고침 후 선택을 변경해주세요." }, { status: 409, headers: PRIVATE_VOTE_HEADERS });
       }
       if (rpcError.code === "P0002") {
@@ -116,7 +124,7 @@ export async function POST(request: Request, context: Context) {
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500, headers: PRIVATE_VOTE_HEADERS });
     }
 
-    return NextResponse.json({
+    return finish(NextResponse.json({
       data: {
         id: row.id,
         votes: row.votes,
@@ -124,7 +132,7 @@ export async function POST(request: Request, context: Context) {
         optionIndex: row.option_index,
       },
       mode: "rpc",
-    }, { headers: PRIVATE_VOTE_HEADERS });
+    }, { headers: PRIVATE_VOTE_HEADERS }));
   } catch (error) {
     logPublicMutationError("vote-create-unexpected", error);
     return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500, headers: PRIVATE_VOTE_HEADERS });
@@ -132,10 +140,12 @@ export async function POST(request: Request, context: Context) {
 }
 
 export async function PATCH(request: Request, context: Context) {
-  const auth = await requireAuthenticatedUser(request);
-  if (!auth.user) return auth.response;
   const rateLimitResponse = enforceRateLimit(request, RATE_LIMIT_POLICIES.voteMutation);
   if (rateLimitResponse) return withPrivateVoteHeaders(rateLimitResponse);
+  const identity = await getPollVoteActor(request);
+  if (!identity.actor) return identity.response;
+  const actor = identity.actor;
+  const finish = (response: NextResponse) => withVoteActorCookie(response, actor, request);
 
   try {
     const { id } = await context.params;
@@ -190,14 +200,17 @@ export async function PATCH(request: Request, context: Context) {
       return NextResponse.json({ error: "optionIndex is out of range." }, { status: 400, headers: PRIVATE_VOTE_HEADERS });
     }
 
-    const { data: rpcData, error: rpcError } = await supabaseMutation.rpc("change_authenticated_poll_vote", {
+    const { data: rpcData, error: rpcError } = await supabaseMutation.rpc(actor.userId ? "change_authenticated_poll_vote" : "change_guest_poll_vote", {
       p_poll_id: id,
       p_new_option_index: optionIndex as number,
-      p_user_id: auth.user.id,
+      ...(actor.userId ? { p_user_id: actor.userId } : { p_guest_id_hash: actor.guestHash }),
     });
 
     if (rpcError) {
       if (isAccountVotingMigrationMissing(rpcError)) return accountVotingMigrationResponse();
+      if (rpcError.message === "VOTE_REQUIRES_ACCOUNT") {
+        return NextResponse.json({ code: "VOTE_REQUIRES_ACCOUNT", error: "계정에 연결된 선택입니다. 이 선택을 변경하려면 해당 계정으로 로그인해주세요." }, { status: 409, headers: PRIVATE_VOTE_HEADERS });
+      }
       if (rpcError.code === "P0002") {
         if (rpcError.message === "CONTENT_NOT_AVAILABLE" || rpcError.message === "Poll not found." || rpcError.message === "POLL_NOT_FOUND") {
           return NextResponse.json({ error: "질문을 찾을 수 없습니다." }, { status: 404, headers: PRIVATE_VOTE_HEADERS });
@@ -218,7 +231,7 @@ export async function PATCH(request: Request, context: Context) {
       return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500, headers: PRIVATE_VOTE_HEADERS });
     }
 
-    return NextResponse.json({
+    return finish(NextResponse.json({
       data: {
         id: row.id,
         votes: row.votes,
@@ -227,7 +240,7 @@ export async function PATCH(request: Request, context: Context) {
         changed: row.changed,
       },
       mode: "rpc",
-    }, { headers: PRIVATE_VOTE_HEADERS });
+    }, { headers: PRIVATE_VOTE_HEADERS }));
   } catch (error) {
     logPublicMutationError("vote-change-unexpected", error);
     return NextResponse.json({ error: PUBLIC_INTERNAL_ERROR_MESSAGE }, { status: 500, headers: PRIVATE_VOTE_HEADERS });
