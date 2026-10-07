@@ -7,6 +7,7 @@ import { getSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { EmailAuthForm } from '@/components/auth-email-form';
 import { ProfileOnboarding } from '@/components/profile-onboarding';
 import { parseAccountProfile, type AccountProfile } from '@/lib/profile';
+import { PolicyLinks } from '@/components/policy-links';
 
 type LoginRequest = { message: string; returnTo: string };
 type AuthState = {
@@ -56,6 +57,7 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
       <div className="flex items-center gap-3 py-1 text-xs text-muted"><span className="h-px flex-1 bg-line" /><span>또는</span><span className="h-px flex-1 bg-line" /></div>
       <EmailAuthForm returnTo={returnTo} disabled={pending !== null} onBusyChange={setEmailPending} />
       <p className="text-xs leading-relaxed text-muted">처음 이용해도 로그인 과정에서 자동으로 가입돼요.</p>
+      <PolicyLinks newTab />
       <p aria-live="polite" className="text-sm text-danger">{error}</p>
     </div>
   );

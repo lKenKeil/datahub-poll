@@ -44,6 +44,7 @@ const mocks = {
   'next/navigation': { useRouter: () => router },
   '@/lib/supabase-auth-browser': { getSupabaseAuthBrowserClient: () => client },
   '@/components/profile-onboarding': { ProfileOnboarding: () => null },
+  '@/components/policy-links': { PolicyLinks: () => null },
   '@/lib/profile': { parseAccountProfile: () => null },
 };
 function load(path) {

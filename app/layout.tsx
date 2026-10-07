@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AuthProvider } from "@/components/auth-provider";
 import { BRAND, BRAND_SOCIAL_IMAGE } from "@/lib/brand";
 import { getSiteUrl } from "@/lib/site-url";
+import { SiteFooter } from "@/components/site-footer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,7 +49,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-canvas text-ink dark:bg-canvas dark:text-ink transition-colors">
-        <ThemeProvider><AuthProvider>{children}</AuthProvider></ThemeProvider>
+        <ThemeProvider><AuthProvider>{children}<SiteFooter /></AuthProvider></ThemeProvider>
       </body>
     </html>
   );
