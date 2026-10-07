@@ -30,9 +30,10 @@ mocks['@/lib/service-policies'] = load('lib/service-policies.ts');
 mocks['@/components/policy-links'] = load('components/policy-links.tsx');
 mocks['@/components/policy-document'] = load('components/policy-document.tsx');
 const { SERVICE_POLICIES } = mocks['@/lib/service-policies'];
-assert.equal(SERVICE_POLICIES.operatorName, null, 'do not invent an operator');
-assert.equal(SERVICE_POLICIES.privacyContactEmail, null, 'do not invent a contact');
-assert.equal(SERVICE_POLICIES.effectiveDate, null, 'draft is not an effective final policy');
+assert.equal(SERVICE_POLICIES.supportEmail, 'support@askio.quest');
+assert.equal(SERVICE_POLICIES.privacyContactEmail, 'privacy@askio.quest');
+assert.equal(SERVICE_POLICIES.effectiveDate, '2026-10-07');
+assert.equal(SERVICE_POLICIES.effectiveDateLabel, '2026년 10월 7일');
 
 for (const [name, title, sectionCount] of [
   ['privacy', '개인정보처리방침', 16], ['terms', '서비스 이용약관', 20],
@@ -44,9 +45,12 @@ for (const [name, title, sectionCount] of [
   const html = renderToStaticMarkup(React.createElement(page.default));
   assert.equal((html.match(/<h1 /g) ?? []).length, 1);
   assert.equal((html.match(/<h2 /g) ?? []).length, sectionCount);
-  assert.match(html, /공개 전 검토 초안/);
-  assert.match(html, /시행일: 정식 공개 전 확정 예정/);
-  assert.match(html, /문의 이메일과 담당자를 확인 중/);
+  assert.doesNotMatch(html, /초안|TODO|placeholder|확정 예정|확정할 예정|확인 중|마련해야|정식 공개 전/);
+  assert.match(html, /<time dateTime="2026-10-07">2026년 10월 7일<\/time>/);
+  for (const email of ['support@askio.quest', 'privacy@askio.quest']) {
+    assert.ok(html.includes(`href="mailto:${email}"`), `working contact link: ${email}`);
+  }
+  assert.doesNotMatch(html, /마이페이지에서 즉시|1인 1표 완벽 보장|완벽히 보장합니다/);
   assert.doesNotMatch(html, /GUEST_ID_SECRET|HMAC|access_token|service_role/);
   assert.match(html, /href="\/privacy"/);
   assert.match(html, /href="\/terms"/);
@@ -56,6 +60,10 @@ assert.match(privacy, /내부 계정 연결/);
 assert.match(privacy, /URL을 아는 사람의 접근이 철회되는 것은 아닙니다/);
 assert.match(privacy, /URL의 검색어 또는 페이지 제목/);
 assert.match(privacy, /쿠키 삭제만으로 향후 분석 전송이 중단되는 것도 아닙니다/);
+assert.match(privacy, /직접 계정을 탈퇴하는 화면은 없습니다/);
+assert.match(privacy, /비밀번호를 수집·저장하는 방식이 아닙니다/);
+assert.match(privacy, /서비스 내부에 분석 거부 전용 설정은 없습니다/);
+assert.match(privacy, /검토하고 결과를 안내합니다/);
 const terms = renderToStaticMarkup(React.createElement(load('app/terms/page.tsx').default));
 assert.match(terms, /과학적 여론조사나 대표 표본 조사가 아니며/);
 assert.match(terms, /고의·과실/);
@@ -70,4 +78,4 @@ const footer = renderToStaticMarkup(React.createElement(load('components/site-fo
 assert.match(footer, /<footer/);
 assert.match(footer, /Askio/);
 assert.doesNotMatch(footer, /target="_blank"/);
-console.log('PASS service policy pages, draft gates, metadata, privacy caveats, footer/auth links');
+console.log('PASS finalized service policies, confirmed date and mailto links, metadata, privacy caveats, footer/auth links');

@@ -1,12 +1,13 @@
 import { BRAND } from '@/lib/brand';
 
-// Release gate: replace the pending values only after the operator confirms
-// the contact channel and reviews retention / processor / transfer details.
+// Confirmed public contact channels. Legal / provider details that are not
+// established by the repository are tracked in the operational checklist.
 export const SERVICE_POLICIES = {
   reviewedAt: '2026-10-07',
-  effectiveDate: null as string | null,
-  operatorName: null as string | null,
-  privacyContactEmail: null as string | null,
+  effectiveDate: '2026-10-07',
+  effectiveDateLabel: '2026년 10월 7일',
+  supportEmail: 'support@askio.quest',
+  privacyContactEmail: 'privacy@askio.quest',
   privacy: {
     href: '/privacy',
     title: `개인정보처리방침 | ${BRAND.name}`,

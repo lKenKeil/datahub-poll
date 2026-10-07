@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { PolicyContact, PolicyDocument, PolicySection } from '@/components/policy-document';
+import { PolicyContact, PolicyDocument, PolicyEmailLink, PolicySection } from '@/components/policy-document';
 import { BRAND } from '@/lib/brand';
 import { SERVICE_POLICIES } from '@/lib/service-policies';
 
@@ -13,7 +13,7 @@ export default function TermsPage() {
   return (
     <PolicyDocument title="서비스 이용약관" introduction={`${BRAND.name}에서 질문하고 선택하며 서로의 이유를 나누기 위한 이용 기준을 안내합니다.`}>
       <PolicySection id="purpose" title="1. 목적">
-        <p>이 약관은 {BRAND.name}의 운영자와 이용자 사이의 서비스 이용 기준 및 콘텐츠 운영 원칙을 정하는 것을 목적으로 합니다. 운영자 정보와 시행일이 확정되기 전까지 현재 문서는 검토 초안입니다.</p>
+        <p>이 약관은 {BRAND.name}의 운영자와 이용자 사이의 서비스 이용 기준 및 콘텐츠 운영 원칙을 정하는 것을 목적으로 합니다.</p>
       </PolicySection>
       <PolicySection id="definitions" title="2. 용어">
         <p>이용자는 서비스를 방문하거나 사용하는 사람, 회원은 로그인 계정을 사용하는 사람, 비회원은 계정 로그인 없이 사용하는 사람을 말합니다. 이용자 콘텐츠는 질문·선택지·설명·이미지·댓글·답글 등 이용자가 올린 내용을 말합니다.</p>
@@ -27,7 +27,7 @@ export default function TermsPage() {
       </PolicySection>
       <PolicySection id="account" title="5. 계정과 로그인">
         <p>Google·카카오 또는 이메일 인증번호로 로그인할 수 있으며, 처음 인증하는 경우 계정이 생성될 수 있습니다. 타인의 계정·이메일을 무단 사용하지 말고 로그인 세션과 질문 관리용 토큰을 안전하게 관리해주세요. 로그인 제공자의 정책이나 장애로 이용이 제한될 수 있습니다.</p>
-        <p>공개 닉네임은 자동 생성 후 변경할 수 있고 소셜 로그인 이름을 강제로 공개하지 않습니다. 현재 직접 계정 탈퇴 화면은 없으며 계정 관련 요청 경로는 정식 공개 전에 마련해야 합니다.</p>
+        <p>공개 닉네임은 자동 생성 후 변경할 수 있고 소셜 로그인 이름을 강제로 공개하지 않습니다. 현재 직접 계정 탈퇴 화면은 없습니다. 계정 정보의 열람·정정·삭제 관련 요청은 <PolicyEmailLink />로, 그 밖의 계정 이용 문의는 <PolicyEmailLink kind="support" />로 보내주세요. 필요한 본인 확인과 처리 범위 검토를 거쳐 안내합니다.</p>
       </PolicySection>
       <PolicySection id="questions" title="6. 질문 작성과 관리">
         <p>질문은 서비스의 제목·선택지·이미지 등 입력 기준에 맞게 작성해주세요. 작성자에게 제공되는 관리 권한과 서버의 권한 확인에 따라 수정·삭제할 수 있습니다. 질문의 수정 잠금 조건이나 댓글 존재 여부에 따라 질문·선택지·이미지 변경이 제한될 수 있습니다.</p>
@@ -60,7 +60,7 @@ export default function TermsPage() {
       <PolicySection id="moderation" title="13. 숨김·삭제와 요청 제한">
         <p>금지행위, 권리 침해, 법령상 필요 또는 운영 검토가 필요한 콘텐츠는 숨기거나 삭제할 수 있습니다. 숨김은 일반 공개 화면에서 비노출하는 조치이며 검토 후 복구할 수 있습니다. 삭제는 콘텐츠와 관련 데이터를 정리하는 최종 조치로 복구를 보장하지 않습니다.</p>
         <p>삭제 시 관련 댓글·답글·반응·투표 등이 함께 정리될 수 있고, 업로드 이미지는 기존 저장소 정리 절차를 사용합니다. 공개 URL을 이미 알고 있는 경우 숨김만으로 파일 접근이 차단되지 않으며, 삭제 뒤에도 외부 캐시 등에 잠시 남을 수 있습니다.</p>
-        <p>반복 요청에는 일시적인 요청 제한을 적용합니다. 현재 자동 계정 차단 기능은 제공하지 않습니다. 운영 조치에 대한 문의·검토 요청을 받을 유효한 연락 경로는 정식 공개 전 확정해야 합니다.</p>
+        <p>반복 요청에는 일시적인 요청 제한을 적용합니다. 현재 자동 계정 차단 기능은 제공하지 않습니다. 운영 조치에 대한 문의·검토 요청은 <PolicyEmailLink kind="support" />로 보내주세요. 관련 콘텐츠와 문의 내용을 확인하여 안내합니다.</p>
       </PolicySection>
       <PolicySection id="availability" title="14. 서비스 변경과 중단">
         <p>점검, 장애, 보안 문제, 외부 제공자의 사정 또는 운영상 필요로 기능이 변경되거나 중단될 수 있습니다. 중요한 변경은 서비스 안내를 통해 알리는 것을 원칙으로 하며 긴급한 경우 사후 안내가 필요할 수 있습니다. 지속적인 제공이나 데이터 복구를 무조건 보장하지 않습니다.</p>
@@ -77,13 +77,13 @@ export default function TermsPage() {
         <p>이용자 콘텐츠의 정확성·적법성 및 투표 결과의 대표성을 무조건 보장하지는 않습니다. 다만 이 문구가 운영자의 고의·과실에 따른 책임이나 법령상 부담하는 책임을 일률적으로 면제하는 것은 아닙니다. 각자의 책임은 적용 법령과 구체적인 사정에 따라 판단합니다.</p>
       </PolicySection>
       <PolicySection id="privacy" title="18. 개인정보와 약관 변경">
-        <p>개인정보 처리 내용은 개인정보처리방침을 함께 확인해주세요. 약관을 확정하거나 변경할 때에는 내용과 시행일을 알리고, 법령상 별도 안내·동의가 필요한 경우 해당 절차를 마련해야 합니다. 단순히 로그인 버튼을 누르거나 정책 링크가 표시된 것만으로 필요한 법적 동의 절차를 모두 마쳤다고 보지 않습니다.</p>
+        <p>개인정보 처리 내용은 개인정보처리방침을 함께 확인해주세요. 약관을 변경할 때에는 내용과 시행일을 알리고, 법령상 별도 안내·동의가 필요한 경우 해당 절차를 따릅니다. 단순히 로그인 버튼을 누르거나 정책 링크가 표시된 것만으로 필요한 법적 동의 절차를 모두 마쳤다고 보지 않습니다.</p>
       </PolicySection>
-      <PolicySection id="contact" title="19. 문의와 운영자">
+      <PolicySection id="contact" title="19. 문의">
         <PolicyContact />
       </PolicySection>
       <PolicySection id="effective-date" title="20. 시행일">
-        <p>시행일은 정식 공개 전 확정할 예정입니다. 현재 문서의 초안 기준일은 {SERVICE_POLICIES.reviewedAt}이며, 운영자·문의 경로 및 필요한 검토를 완료한 뒤 정식 약관으로 확정해야 합니다.</p>
+        <p>이 이용약관은 {SERVICE_POLICIES.effectiveDateLabel}부터 시행합니다.</p>
       </PolicySection>
     </PolicyDocument>
   );
