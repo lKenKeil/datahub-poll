@@ -130,6 +130,7 @@ export async function POST(request: Request, context: Context) {
         votes: row.votes,
         participants: row.participants,
         optionIndex: row.option_index,
+        canChangeVote: true,
       },
       mode: "rpc",
     }, { headers: PRIVATE_VOTE_HEADERS }));
@@ -237,6 +238,7 @@ export async function PATCH(request: Request, context: Context) {
         votes: row.votes,
         participants: row.participants,
         optionIndex: row.option_index,
+        canChangeVote: true,
         changed: row.changed,
       },
       mode: "rpc",

@@ -1,6 +1,7 @@
 -- LOCAL DISPOSABLE DATABASE ONLY. Never run against Production, even with
 -- ROLLBACK: sequences and external Auth hooks are not transactionally restored.
--- Apply the migrations to a local test database first, then run as its owner:
+-- Apply the account, dual-identity and reconciliation-patch migrations to a
+-- local test database first, then run as its owner:
 -- PGOPTIONS='-c askio_test.account_voting=local-disposable' psql -X \
 --   -v ON_ERROR_STOP=1 -f supabase/tests/account_poll_voting.sql <local URL>
 -- This suite verifies real PostgreSQL privileges, unique/FK constraints,
@@ -320,7 +321,8 @@ begin
   select pv.id into guest_row_id from public.poll_votes as pv
   where pv.poll_id = prefix || '_guest_claim' and pv.guest_id_hash = guest_hash;
   select * into row_result from public.claim_authenticated_poll_vote(prefix || '_guest_claim', null, u1, guest_hash);
-  if row_result.votes <> '[1,0]'::jsonb or row_result.participants <> 1
+  if not found or row_result.votes <> '[1,0]'::jsonb or row_result.participants <> 1
+    or row_result.option_index <> 0
     or not exists (select 1 from public.poll_votes as pv where pv.id = guest_row_id
       and pv.user_id = u1 and pv.guest_id_hash = guest_hash)
     or (select count(*) from public.poll_votes as pv where pv.poll_id = prefix || '_guest_claim') <> 1 then
@@ -338,11 +340,56 @@ begin
   exception when insufficient_privilege then
     if sqlerrm <> 'VOTE_REQUIRES_ACCOUNT' then raise; end if;
   end;
+  -- CASE B: another login in the same browser is participation, not an error.
+  -- Reconciliation returns the existing choice read-only, without reassignment
+  -- or UPDATE at all. The API derives canChangeVote=false from its private read.
+  perform set_config('askio_test.reject_aggregate', 'yes', true);
+  perform set_config('askio_test.reject_ledger', 'yes', true);
+  select * into row_result from public.claim_authenticated_poll_vote(prefix || '_guest_claim', null, u2, guest_hash);
+  if not found or row_result.option_index <> 0 or row_result.votes <> '[1,0]'::jsonb
+    or row_result.participants <> 1 then
+    raise exception 'Cross-account browser participation did not return its existing result';
+  end if;
+  perform public.claim_authenticated_poll_vote(prefix || '_guest_claim', null, u2, guest_hash);
+  perform set_config('askio_test.reject_aggregate', 'no', true);
+  perform set_config('askio_test.reject_ledger', 'no', true);
+  if (select count(*) from public.poll_votes as pv where pv.poll_id = prefix || '_guest_claim') <> 1
+    or not exists (select 1 from public.poll_votes as pv where pv.id = guest_row_id
+      and pv.user_id = u1 and pv.guest_id_hash = guest_hash and pv.option_index = 0)
+    or exists (select 1 from public.poll_votes as pv where pv.poll_id = prefix || '_guest_claim'
+      and pv.user_id = u2) then
+    raise exception 'Cross-account browser reconciliation transferred or inserted a ballot';
+  end if;
   begin
-    perform public.claim_authenticated_poll_vote(prefix || '_guest_claim', null, u2, guest_hash);
-    raise exception 'Another account stole the claimed guest row';
-  exception when insufficient_privilege then null;
+    perform public.cast_authenticated_poll_vote(prefix || '_guest_claim', 1, u2, guest_hash);
+    raise exception 'Cross-account browser participation allowed a new account vote';
+  exception when unique_violation then
+    if sqlerrm <> 'POLL_ALREADY_VOTED' then raise; end if;
   end;
+
+  -- CASE C: the current account voted on another device. Its option wins over
+  -- the current browser's other-account choice and remains changeable by owner.
+  perform public.cast_authenticated_poll_vote(prefix || '_guest_claim', 1, u2, second_guest_hash);
+  perform set_config('askio_test.reject_aggregate', 'yes', true);
+  perform set_config('askio_test.reject_ledger', 'yes', true);
+  select * into row_result from public.claim_authenticated_poll_vote(prefix || '_guest_claim', null, u2, guest_hash);
+  if not found or row_result.option_index <> 1 or row_result.votes <> '[1,1]'::jsonb
+    or row_result.participants <> 2 then
+    raise exception 'Current account vote did not take precedence over browser participation';
+  end if;
+  perform set_config('askio_test.reject_aggregate', 'no', true);
+  perform set_config('askio_test.reject_ledger', 'no', true);
+  if not exists (select 1 from public.poll_votes as pv where pv.id = guest_row_id
+      and pv.user_id = u1 and pv.guest_id_hash = guest_hash and pv.option_index = 0)
+    or (select count(*) from public.poll_votes as pv where pv.poll_id = prefix || '_guest_claim') <> 2 then
+    raise exception 'Account precedence modified another account or added a third row';
+  end if;
+  select * into row_result from public.change_authenticated_poll_vote(prefix || '_guest_claim', 0, u2);
+  if not row_result.changed or row_result.votes <> '[2,0]'::jsonb or row_result.participants <> 2
+    or not exists (select 1 from public.poll_votes as pv where pv.id = guest_row_id
+      and pv.user_id = u1 and pv.guest_id_hash = guest_hash and pv.option_index = 0) then
+    raise exception 'Current account could not change its own vote without disturbing the browser row';
+  end if;
 
   -- Existing account wins guest conflict; keep both historical votes, no third.
   perform public.cast_guest_poll_vote(prefix || '_guest_conflict', 0, guest_hash);

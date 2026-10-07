@@ -153,8 +153,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const openLogin = useCallback((message = '사람들과 궁금증을 나누려면 로그인해주세요.', returnTo?: string) => {
-    // Default is pathname only: never forward private/query-string credentials.
-    setLoginRequest({ message, returnTo: getSafeAuthReturnPath(returnTo ?? window.location.pathname) });
+    // Capture the page that opened this dialog before leaving for any provider.
+    const currentPath = window.location.pathname + window.location.search + window.location.hash;
+    setLoginRequest({ message, returnTo: getSafeAuthReturnPath(returnTo ?? currentPath) });
   }, []);
   const signOut = useCallback(async () => {
     try {

@@ -5,6 +5,7 @@ import { getSupabaseMutationClient, supabaseServer } from "@/lib/supabase-server
 import { isValidVoterId } from "@/lib/voter-id";
 import {
   accountVotingMigrationResponse,
+  getPollViewerVote,
   isAccountVotingMigrationMissing,
   withPrivateVoteHeaders,
 } from "@/lib/poll-vote-server";
@@ -179,7 +180,6 @@ export async function GET(request: Request, context: Context) {
     if (!identity.actor) return identity.response;
     const actor = identity.actor;
     const reactionActor = actor.reactionKey;
-    const viewerUserId = actor.userId;
     const finish = (response: NextResponse) => withVoteActorCookie(response, actor, request);
     const voterId = actor.viewerVerified ? request.headers.get("x-voter-id")?.trim().toLowerCase() ?? "" : "";
     if (voterId && !isValidVoterId(voterId)) {
@@ -228,40 +228,8 @@ export async function GET(request: Request, context: Context) {
     if (commentAuthorsError) throw commentAuthorsError;
     if (!poll) return unavailable();
 
-    let viewerVote: { optionIndex: number } | null = null;
+    const viewerVote = await getPollViewerVote(supabaseMutation, id, actor, voterId);
     let hasAnyVotes = Number(poll.participants) > 0;
-    if (viewerUserId) {
-      const { data: accountVote, error: accountVoteError } = await supabaseMutation
-        .from("poll_votes").select("option_index").eq("poll_id", id)
-        .eq("user_id", viewerUserId).maybeSingle();
-      if (accountVoteError) throw accountVoteError;
-      if (accountVote && Number.isInteger(accountVote.option_index)) {
-        viewerVote = { optionIndex: accountVote.option_index };
-      }
-    }
-    if (!viewerVote && actor.guestHash) {
-      let guestQuery = supabaseMutation
-        .from("poll_votes").select("option_index").eq("poll_id", id)
-        .eq("guest_id_hash", actor.guestHash);
-      if (viewerUserId) guestQuery = guestQuery.is("user_id", null);
-      const { data: guestVote, error: guestVoteError } = await guestQuery.maybeSingle();
-      if (guestVoteError) throw guestVoteError;
-      if (guestVote && Number.isInteger(guestVote.option_index)) {
-        viewerVote = { optionIndex: guestVote.option_index };
-      }
-    }
-    // Keep historical result access for an unclaimed browser vote, but never
-    // reveal another account's vote through a copied legacy browser ID. This
-    // GET stays read-only; guest/account claim is an explicit POST endpoint.
-    if (!viewerVote && voterId) {
-      const { data: vote, error: voteError } = await supabaseMutation
-        .from("poll_votes").select("option_index").eq("poll_id", id)
-        .eq("voter_id", voterId).is("user_id", null).is("guest_id_hash", null).maybeSingle();
-      if (voteError) throw voteError;
-      if (vote && Number.isInteger(vote.option_index)) {
-        viewerVote = { optionIndex: vote.option_index };
-      }
-    }
     if (!hasAnyVotes && (!poll.edit_lock_mode || poll.edit_lock_mode === "first_vote")) {
       const { data: existingVote, error: existingVoteError } = await supabaseMutation
         .from("poll_votes").select("id").eq("poll_id", id).limit(1).maybeSingle();

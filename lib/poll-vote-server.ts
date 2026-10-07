@@ -1,7 +1,49 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import type { getSupabaseMutationClient } from "@/lib/supabase-server";
+import type { PollVoteActor } from "@/lib/poll-vote-identity";
 
 export const PRIVATE_VOTE_HEADERS = { "Cache-Control": "private, no-store" };
+
+export type PollViewerVote = { optionIndex: number; canChangeVote: boolean };
+
+// Resolve participation separately from ownership. The browser keeps its
+// result across account changes without learning whose account owns the row.
+// This helper only reads the ledger; reconciliation is an explicit POST.
+export async function getPollViewerVote(
+  client: ReturnType<typeof getSupabaseMutationClient>,
+  pollId: string,
+  actor: PollVoteActor,
+  legacyVoterId = "",
+): Promise<PollViewerVote | null> {
+  if (!actor.viewerVerified) return null;
+  if (actor.userId) {
+    const { data: accountVote, error } = await client.from("poll_votes")
+      .select("option_index").eq("poll_id", pollId).eq("user_id", actor.userId).maybeSingle();
+    if (error) throw error;
+    if (accountVote && Number.isInteger(accountVote.option_index)) {
+      return { optionIndex: accountVote.option_index, canChangeVote: true };
+    }
+  }
+  if (actor.guestHash) {
+    const { data: browserVote, error } = await client.from("poll_votes")
+      .select("option_index,user_id").eq("poll_id", pollId).eq("guest_id_hash", actor.guestHash).maybeSingle();
+    if (error) throw error;
+    if (browserVote && Number.isInteger(browserVote.option_index)) {
+      return { optionIndex: browserVote.option_index, canChangeVote: browserVote.user_id == null };
+    }
+  }
+  if (legacyVoterId) {
+    const { data: legacyVote, error } = await client.from("poll_votes")
+      .select("option_index").eq("poll_id", pollId).eq("voter_id", legacyVoterId)
+      .is("user_id", null).is("guest_id_hash", null).maybeSingle();
+    if (error) throw error;
+    if (legacyVote && Number.isInteger(legacyVote.option_index)) {
+      return { optionIndex: legacyVote.option_index, canChangeVote: true };
+    }
+  }
+  return null;
+}
 
 export function isAccountVotingMigrationMissing(error: unknown) {
   const record = error && typeof error === "object"

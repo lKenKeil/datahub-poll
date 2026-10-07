@@ -6,6 +6,7 @@ import { enforceRateLimit, RATE_LIMIT_POLICIES } from "@/lib/rate-limit";
 import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/content-report-server";
 import {
   accountVotingMigrationResponse,
+  getPollViewerVote,
   isAccountVotingMigrationMissing,
   PRIVATE_VOTE_HEADERS,
   withPrivateVoteHeaders,
@@ -44,7 +45,7 @@ export async function POST(request: Request, context: Context) {
 
     const supabaseMutation = getSupabaseMutationClient();
     const { data: poll, error: pollError } = await supabaseMutation
-      .from("polls").select("id,is_hidden").eq("id", id).maybeSingle();
+      .from("polls").select("id,votes,participants,is_hidden").eq("id", id).maybeSingle();
     if (pollError) {
       if (isModerationMigrationMissing(pollError)) return withPrivateVoteHeaders(moderationErrorResponse(pollError, "vote-claim-poll-read"));
       throw pollError;
@@ -61,11 +62,11 @@ export async function POST(request: Request, context: Context) {
       ...(actor.userId ? { p_user_id: actor.userId } : {}),
       p_guest_id_hash: actor.guestHash,
     });
-    if (error) {
+    // Older deployed claim RPCs rejected an already-account-bound browser
+    // row. That is a normal participation result, never another guest actor.
+    const browserConflict = error?.code === "42501" && error.message === "VOTE_REQUIRES_ACCOUNT";
+    if (error && !browserConflict) {
       if (isAccountVotingMigrationMissing(error)) return accountVotingMigrationResponse();
-      if (error.message === "VOTE_REQUIRES_ACCOUNT") {
-        return NextResponse.json({ code: "VOTE_REQUIRES_ACCOUNT", error: "이 브라우저의 선택은 다른 계정에 연결되어 있습니다. 해당 계정으로 로그인해주세요." }, { status: 409, headers: PRIVATE_VOTE_HEADERS });
-      }
       if (error.code === "P0002") {
         return NextResponse.json({ error: "질문을 찾을 수 없습니다." }, { status: 404, headers: PRIVATE_VOTE_HEADERS });
       }
@@ -76,12 +77,13 @@ export async function POST(request: Request, context: Context) {
       throw error;
     }
     const row = Array.isArray(data) ? data[0] : data;
+    const viewerVote = await getPollViewerVote(supabaseMutation, id, actor);
     return finish(NextResponse.json({
-      data: row ? {
-        id: row.id,
-        votes: row.votes,
-        participants: row.participants,
-        optionIndex: row.option_index,
+      data: viewerVote ? {
+        id,
+        votes: row?.votes ?? poll.votes,
+        participants: row?.participants ?? poll.participants,
+        ...viewerVote,
       } : null,
       mode: "rpc",
     }, { headers: PRIVATE_VOTE_HEADERS }));

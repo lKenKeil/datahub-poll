@@ -15,6 +15,7 @@ import { POLLS } from '../../../data/polls';
 import { CommentRow, DbPoll } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { getStoredLegacyVoterId } from '@/lib/voter-id';
+import { fetchPollVoteIdentity } from '@/lib/poll-vote-identity-request';
 import {
   getPollOptionImagePublicUrl,
   normalizeOptionImagePaths,
@@ -53,6 +54,7 @@ type IncrementVoteResponse = {
   votes: number[];
   participants: number;
   optionIndex: number;
+  canChangeVote: boolean;
   changed?: boolean;
 };
 
@@ -67,7 +69,7 @@ type CommentView = CommentRow & {
 type PollDetailResponse = {
   poll?: DbPoll | null;
   comments?: CommentView[];
-  viewerVote?: { optionIndex: number } | null;
+  viewerVote?: { optionIndex: number; canChangeVote: boolean } | null;
   reportable?: boolean;
   error?: string;
 };
@@ -164,6 +166,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const dbPollId = officialPoll ? `official_${id}` : id;
 
   const [hasViewerVote, setVoted] = useState(false);
+  const [canChangeVote, setCanChangeVote] = useState(false);
   const [isRevoting, setIsRevoting] = useState(false);
   const [choice, setChoice] = useState<string | null>(null);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
@@ -241,6 +244,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     setVoteIdentityError('');
     setVotePending(false);
     setVoted(false);
+    setCanChangeVote(false);
     setIsRevoting(false);
     setChoice(null);
     setSelectedOptionIndex(null);
@@ -322,22 +326,26 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     if (silent) setSyncState('syncing');
 
     try {
+      let claimSucceeded = true;
       if (user?.id || voterId) {
         // The server may attach an existing guest/legacy vote to this actor.
         // No client identity is created; concurrent refreshes share one claim.
         if (voteClaimRef.current?.key !== voteContextKey) {
           voteClaimRef.current = {
             key: voteContextKey,
-            promise: fetch(`/api/polls/${dbPollId}/vote/claim`, {
+            promise: fetchPollVoteIdentity(`/api/polls/${dbPollId}/vote/claim`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(voterId ? { voterId } : {}),
             }).then((response) => response.ok).catch(() => false),
           };
         }
-        const claimSucceeded = await voteClaimRef.current.promise;
+        const currentClaim = voteClaimRef.current;
+        claimSucceeded = await currentClaim.promise;
         if (generation !== pollRequestGenerationRef.current) return;
-        setVoteIdentityError(claimSucceeded ? '' : '기존 투표를 확인하지 못했어요. 새로고침 후 다시 시도해주세요.');
+        // Failed reconciliation can be retried. A successful viewer read below
+        // may still prove browser participation, which is not an identity error.
+        if (!claimSucceeded && voteClaimRef.current === currentClaim) voteClaimRef.current = null;
       }
       const readKey = `${voteContextKey}:${commentSort}`;
       if (viewerReadRef.current?.key !== readKey) {
@@ -345,7 +353,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         // cannot issue competing identities for the same initial viewer.
         const pendingRead = {
           key: readKey,
-          promise: fetch(`/api/polls/${dbPollId}?comments=${commentSort}`, {
+          promise: fetchPollVoteIdentity(`/api/polls/${dbPollId}?comments=${commentSort}`, {
             // The server establishes the HttpOnly cookie before controls are
             // ready. Only its viewerVote restores a selection, not storage.
             cache: 'no-store',
@@ -377,6 +385,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         setReportable(false);
         setReportTarget(null);
         setVoted(false);
+        setCanChangeVote(false);
         setIsRevoting(false);
         setChoice(null);
         setSelectedOptionIndex(null);
@@ -423,6 +432,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       });
 
       if (silent && lastSnapshotRef.current === snapshot) {
+        if (claimSucceeded) setVoteIdentityError('');
         setSyncState('live');
         return;
       }
@@ -483,15 +493,22 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
       if (hasViewerVote) {
         setVoted(true);
+        const changeAllowed = json.viewerVote?.canChangeVote === true;
+        setCanChangeVote(changeAllowed);
+        if (!changeAllowed) setIsRevoting(false);
         setChoice(visibleOptions[selectedOptionIndex as number]);
         setSelectedOptionIndex(selectedOptionIndex as number);
         setResultViewSource((current) => current ?? 'existing_vote');
       } else {
         setVoted(false);
+        setCanChangeVote(false);
         setChoice(null);
         setSelectedOptionIndex(null);
         setResultViewSource(null);
       }
+      setVoteIdentityError(claimSucceeded || hasViewerVote
+        ? ''
+        : '기존 투표를 확인하지 못했어요. 잠시 후 다시 확인해주세요.');
 
       if (
         !silent
@@ -730,6 +747,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
       setSelectedOptionIndex(json.data.optionIndex);
       setVoted(true);
+      setCanChangeVote(json.data.canChangeVote === true);
       setResultRevealAnimating(true);
       setBarWidths(pollData.options.map(() => 0));
       if (resultBarTimerRef.current) clearTimeout(resultBarTimerRef.current);
@@ -775,7 +793,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   };
 
   const handleRevote = async (idx: number) => {
-    if (voteControlsDisabled || voteInFlight.current || !voted || selectedOptionIndex === null) return;
+    if (voteControlsDisabled || !canChangeVote || voteInFlight.current || !voted || selectedOptionIndex === null) return;
     setActionError('');
 
     if (idx === selectedOptionIndex) {
@@ -802,7 +820,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       if (response.status === 409) {
         if (json.code === 'VOTE_REQUIRES_ACCOUNT') {
           setIsRevoting(false);
-          setActionError('이 선택은 로그인한 계정에 연결되어 있어요. 선택을 바꾸려면 다시 로그인해주세요.');
+          setCanChangeVote(false);
+          setActionError('이 브라우저에서 이미 참여했어요. 기존 결과를 확인할 수 있어요.');
           return;
         }
         voteInFlight.current = null;
@@ -815,6 +834,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
       setSelectedOptionIndex(json.data.optionIndex);
+      setCanChangeVote(json.data.canChangeVote === true);
       setBarWidths(calcPercentages(json.data.votes));
       setIsRevoting(false);
       trackVoteSubmitted({
@@ -1036,7 +1056,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
         <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <section aria-busy={votePending || !viewerReady} className="min-w-0 rounded-3xl border border-line bg-surface p-4 shadow-xl shadow-slate-950/[0.04] dark:border-line dark:bg-surface sm:p-6 md:p-8">
-            {!voted || isRevoting ? (
+            {!viewerReady ? (
+              <p role="status" className="py-6 text-center text-sm text-muted">이 브라우저의 투표를 확인하고 있어요...</p>
+            ) : voteIdentityError && !voted ? (
+              <div className="space-y-3 py-6 text-center">
+                <p className="text-sm text-muted">투표 상태를 다시 확인한 뒤 선택할 수 있어요.</p>
+                <button type="button" onClick={() => void fetchAllData()} className="min-h-11 rounded-xl border border-line px-5 py-3 text-sm font-bold text-link">다시 확인</button>
+              </div>
+            ) : !voted || (isRevoting && canChangeVote) ? (
               <div>
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
@@ -1093,9 +1120,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
             ) : (
               <div aria-live="polite">
                 <p className="mb-3 text-sm font-bold text-muted dark:text-muted">사람들은 이렇게 골랐어요.</p>
+                {!canChangeVote ? <p className="mb-3 text-sm text-muted">이 브라우저에서 이미 참여했어요. 기존 선택의 결과를 확인할 수 있어요.</p> : null}
                 <div className="rounded-2xl border border-blue-500/20 bg-primary-soft p-5 sm:flex sm:items-center sm:justify-between sm:gap-6 sm:p-6">
                   <div className="min-w-0">
-                    <span className="inline-flex rounded-full bg-primary px-3 py-1 text-xs font-black text-white">내 선택</span>
+                    <span className="inline-flex rounded-full bg-primary px-3 py-1 text-xs font-black text-white">{canChangeVote ? '내 선택' : '이 브라우저의 선택'}</span>
                     <h2 className="mt-3 min-w-0 break-words text-xl font-black text-ink dark:text-ink sm:text-2xl">{choice} ✓</h2>
                     <p className="mt-2 text-sm font-medium text-muted dark:text-muted">총 {pollData.participants.toLocaleString()}명이 참여했어요.</p>
                   </div>
@@ -1131,7 +1159,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className={`break-words font-black ${isSelected ? 'text-link dark:text-link' : 'text-ink dark:text-ink'}`}>{option}</span>
-                                  {isSelected ? <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-white">내 선택 ✓</span> : null}
+                                  {isSelected ? <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-white">{canChangeVote ? '내 선택 ✓' : '이 브라우저의 선택 ✓'}</span> : null}
                                 </div>
                                 <p className="mt-1 text-xs font-semibold text-muted">{voteCount.toLocaleString()}표</p>
                               </div>
@@ -1148,9 +1176,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                 </div>
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                  <button type="button" disabled={voteControlsDisabled} onClick={() => {
+                  {canChangeVote ? <button type="button" disabled={voteControlsDisabled} onClick={() => {
                     setIsRevoting(true);
-                  }} className="min-h-11 flex-1 rounded-xl border border-blue-500/40 px-5 py-3 text-sm font-bold text-link transition hover:border-blue-600 hover:bg-primary-soft disabled:cursor-wait disabled:opacity-60 dark:text-link dark:hover:bg-primary-soft">다시 투표하기</button>
+                  }} className="min-h-11 flex-1 rounded-xl border border-blue-500/40 px-5 py-3 text-sm font-bold text-link transition hover:border-blue-600 hover:bg-primary-soft disabled:cursor-wait disabled:opacity-60 dark:text-link dark:hover:bg-primary-soft">다시 투표하기</button> : null}
                   <button
                     type="button"
                     onClick={() => void handleShare()}

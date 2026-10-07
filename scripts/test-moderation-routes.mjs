@@ -228,7 +228,7 @@ function supabaseClient(role) {
         let vote = account ? database.poll_votes.find(row => row.poll_id === poll.id && row.user_id === payload.p_user_id) : guestVote;
         if (name.startsWith("claim_")) {
           if (account && !vote && guestVote?.user_id != null && guestVote.user_id !== payload.p_user_id) {
-            return { data: null, error: { code: '42501', message: 'VOTE_REQUIRES_ACCOUNT' } };
+            return { data: [{ id: poll.id, votes: [...poll.votes], participants: poll.participants, option_index: guestVote.option_index }], error: null };
           }
           if (!vote) {
             vote = account && guestVote?.user_id == null ? guestVote : null;
@@ -1359,11 +1359,14 @@ test("owner PATCH strips author identity from service RPC while preserving exist
 });
 
 test("safe return path rejects external encoded/backslash/control and auth-loop targets", async () => {
-  for (const value of [undefined, "https://evil.invalid", "//evil.invalid", "/\\evil.invalid", "/%2fevil.invalid", "/%5cevil.invalid", "/%0aevil", "/api/polls", "/auth/login", "/vote/../auth/callback", "/%61uth/login", "/bad%escape"]) {
+  for (const value of [undefined, "https://evil.invalid", "//evil.invalid", "javascript:alert(1)", "/\\evil.invalid", "/%2fevil.invalid", "/%5cevil.invalid", "/%0aevil", "/api/polls", "/auth/login", "/vote/../auth/callback", "/%61uth/login", "/bad%escape", "/vote/p?x=%0d%0aLocation%3Aevil", "/vote/p#%00"]) {
     assert.equal(getSafeAuthReturnPath(value), "/");
   }
   assert.equal(getSafeAuthReturnPath("/create"), "/create");
   assert.equal(getSafeAuthReturnPath(`/vote/${POLL_ID}`), `/vote/${POLL_ID}`);
+  for (const value of [`/vote/${POLL_ID}?comments=latest&from=home#opinions`, `/vote/${POLL_ID}?q=two%20words#my%20choice`, "/profile?tab=settings#nickname"]) {
+    assert.equal(getSafeAuthReturnPath(value), value);
+  }
 });
 
 test("PKCE callback success redirects safely without caching or exposing code", async () => {
@@ -1374,6 +1377,9 @@ test("PKCE callback success redirects safely without caching or exposing code", 
   assert.equal(exchangedCode, "test-code");
   const unsafe = await callback.GET(new Request("https://example.invalid/auth/callback?code=test-code&next=//evil.invalid"));
   assert.equal(unsafe.headers.get("location"), "https://example.invalid/");
+  const pollPath = `/vote/${POLL_ID}?comments=latest&q=two%20words#opinions`;
+  const pollReturn = await callback.GET(new Request(`https://example.invalid/auth/callback?code=test-code&next=${encodeURIComponent(pollPath)}`));
+  assert.equal(pollReturn.headers.get("location"), `https://example.invalid${pollPath}`);
 });
 
 test("PKCE callback cancellation/missing code/failed exchange expose only generic state", async () => {
@@ -1661,7 +1667,7 @@ test('same account across simulated browser identities has one row and persisten
   const json = await responseJson(await votes.POST(request('POST', { optionIndex: 0 }), context()), 200);
   assert.equal(json.data.optionIndex, 0);
   const seen = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': OTHER_REPORTER_ID }), context()), 200);
-  assert.deepEqual(seen.viewerVote, { optionIndex: 0 });
+  assert.deepEqual(seen.viewerVote, { optionIndex: 0, canChangeVote: true });
   await responseJson(await votes.POST(request('POST', { optionIndex: 1, voterId: OTHER_REPORTER_ID }), context()), 409);
   assert.equal(database.poll_votes.length, 1);
   assert.deepEqual(database.polls[0].votes, [1, 0]);
@@ -1732,7 +1738,7 @@ test('GET preserves only unclaimed legacy result and never mutates or leaks ledg
   authUser = null;
   database.poll_votes.push({ poll_id: POLL_ID, voter_id: VOTER_ID, user_id: null, option_index: 1 });
   const first = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context()), 200);
-  assert.deepEqual(first.viewerVote, { optionIndex: 1 });
+  assert.deepEqual(first.viewerVote, { optionIndex: 1, canChangeVote: true });
   assert.equal(calls.filter(row => row.rpc).length, 0);
   database.poll_votes[0].user_id = AUTH_USER_ID;
   const after = await responseJson(await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context()), 200);
@@ -1805,7 +1811,7 @@ test('detail establishes a cookie before guest voting; refresh preserves only sa
   assert.notEqual(row.voter_id, VOTER_ID);
   const refreshed = await detail.GET(request('GET', undefined, { cookie }), context());
   const json = await responseJson(refreshed, 200);
-  assert.deepEqual(json.viewerVote, { optionIndex: 1 });
+  assert.deepEqual(json.viewerVote, { optionIndex: 1, canChangeVote: true });
   for (const result of [json, vote]) {
     assertNoAccountIdentity(result);
     assert.ok(!JSON.stringify(result).includes(row.guest_id_hash));
@@ -1843,25 +1849,38 @@ test('guest change preserves ledger identity and participant count, including sa
   assert.deepEqual(database.polls[0].votes, [20, 31]);
 });
 
-test('guest-to-account claim needs no legacy ID and retains browser duplicate protection after logout', async () => {
+test('case A: guest-to-Google claim preserves one ballot and restores changeable account results', async () => {
   authUser = null;
   await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
   const hash = database.poll_votes[0].guest_id_hash;
   const id = database.poll_votes[0].id;
   const aggregate = JSON.stringify({ votes: database.polls[0].votes, participants: database.polls[0].participants });
-  authUser = { id: AUTH_USER_ID, is_anonymous: false };
+  authUser = { id: AUTH_USER_ID, is_anonymous: false, app_metadata: { provider: 'google' } };
+  const beforeClaim = JSON.stringify(database.poll_votes);
+  const viewed = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.deepEqual(viewed.viewerVote, { optionIndex: 0, canChangeVote: true });
+  assert.equal(JSON.stringify(database.poll_votes), beforeClaim);
+  assert.equal(calls.filter(row => row.rpc?.startsWith('claim_')).length, 0);
+  // Even before reconciliation, the fresh account cast must not add a row.
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 409);
   const claim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
   assert.equal(claim.data.optionIndex, 0);
+  assert.equal(claim.data.canChangeVote, true);
   assert.equal(database.poll_votes[0].user_id, AUTH_USER_ID);
   assert.equal(database.poll_votes[0].guest_id_hash, hash);
   assert.equal(database.poll_votes[0].id, id);
   assert.equal(database.poll_votes.length, 1);
   assert.equal(JSON.stringify({ votes: database.polls[0].votes, participants: database.polls[0].participants }), aggregate);
+  assert.deepEqual((await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200)).viewerVote,
+    { optionIndex: 0, canChangeVote: true });
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 409);
+  assertNoAccountIdentity(claim);
+  assert.ok(!JSON.stringify(claim).includes(hash));
   authUser = null;
   await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 409);
   const denied = await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 409);
   assert.equal(denied.code, 'VOTE_REQUIRES_ACCOUNT');
-  assert.deepEqual((await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200)).viewerVote, { optionIndex: 0 });
+  assert.deepEqual((await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200)).viewerVote, { optionIndex: 0, canChangeVote: false });
   assert.equal(JSON.stringify({ votes: database.polls[0].votes, participants: database.polls[0].participants }), aggregate);
 });
 
@@ -1875,7 +1894,7 @@ test('guest/account conflict prefers account without third vote or aggregate cor
   const claim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
   assert.equal(claim.data.optionIndex, 1);
   const viewed = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
-  assert.deepEqual(viewed.viewerVote, { optionIndex: 1 });
+  assert.deepEqual(viewed.viewerVote, { optionIndex: 1, canChangeVote: true });
   await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 409);
   assert.equal(database.poll_votes.length, 2);
   assert.equal(JSON.stringify(database.polls[0]), before);
@@ -1898,7 +1917,7 @@ test('legacy-to-guest claim preserves original row and aggregates without exposi
   assert.deepEqual(database.polls[0].votes, [10, 8]);
   assert.equal(database.polls[0].participants, 18);
   assert.equal(database.poll_votes.length, 1);
-  assert.deepEqual((await responseJson(await detail.GET(request('GET', undefined, { cookie }), context()), 200)).viewerVote, { optionIndex: 1 });
+  assert.deepEqual((await responseJson(await detail.GET(request('GET', undefined, { cookie }), context()), 200)).viewerVote, { optionIndex: 1, canChangeVote: true });
   assert.ok(!JSON.stringify(json).includes(VOTER_ID));
 });
 
@@ -1961,19 +1980,76 @@ test('public question remains readable during Auth failure without fallback view
   }
 });
 
-test('another signed-in account cannot see a cookie-bound ballot already claimed by a different account', async () => {
+test('case B: guest to Google to logout to Kakao preserves readable results without transferring ownership', async () => {
   authUser = null;
   await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 200);
-  authUser = { id: AUTH_USER_ID, is_anonymous: false };
+  authUser = { id: AUTH_USER_ID, is_anonymous: false, app_metadata: { provider: 'google' } };
   await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
-  authUser = { id: REPORTER_ID, is_anonymous: false };
+  const ledger = JSON.stringify(database.poll_votes);
+  const aggregate = JSON.stringify(database.polls[0]);
+  authUser = null;
+  const loggedOut = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.deepEqual(loggedOut.viewerVote, { optionIndex: 1, canChangeVote: false });
+  authUser = { id: REPORTER_ID, is_anonymous: false, app_metadata: { provider: 'kakao' } };
   const json = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
-  assert.equal(json.viewerVote, null);
-  const failedClaim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 409);
-  assert.equal(failedClaim.code, 'VOTE_REQUIRES_ACCOUNT');
+  assert.deepEqual(json.viewerVote, { optionIndex: 1, canChangeVote: false });
+  const claim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(claim.data.optionIndex, 1);
+  assert.equal(claim.data.canChangeVote, false);
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 409);
+  await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 409);
   assert.equal(database.poll_votes.length, 1);
   assert.deepEqual(database.polls[0].votes, [0, 1]);
-  assertNoAccountIdentity(json);
+  assert.equal(JSON.stringify(database.poll_votes), ledger);
+  assert.equal(JSON.stringify(database.polls[0]), aggregate);
+  for (const result of [loggedOut, json, claim]) {
+    assertNoAccountIdentity(result);
+    assert.ok(!JSON.stringify(result).includes(REPORTER_ID));
+    assert.ok(!JSON.stringify(result).includes(database.poll_votes[0].guest_id_hash));
+    assert.ok(!JSON.stringify(result).includes(database.poll_votes[0].voter_id));
+  }
+});
+
+test('case C: Kakao account ballot takes priority over another account browser ballot and can change only its own row', async () => {
+  authUser = { id: AUTH_USER_ID, is_anonymous: false, app_metadata: { provider: 'google' } };
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
+  const googleRow = JSON.stringify(database.poll_votes[0]);
+  authUser = { id: REPORTER_ID, is_anonymous: false, app_metadata: { provider: 'kakao' } };
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: `askio_guest_id=${VOTER_ID}` }), context()), 200);
+  const before = JSON.stringify(database.poll_votes);
+  const aggregate = JSON.stringify(database.polls[0]);
+  const viewed = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.deepEqual(viewed.viewerVote, { optionIndex: 1, canChangeVote: true });
+  const claimed = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(claimed.data.optionIndex, 1);
+  assert.equal(claimed.data.canChangeVote, true);
+  assert.equal(JSON.stringify(database.poll_votes), before);
+  assert.equal(JSON.stringify(database.polls[0]), aggregate);
+  await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 409);
+  const changed = await responseJson(await votes.PATCH(request('PATCH', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(changed.data.canChangeVote, true);
+  assert.equal(JSON.stringify(database.poll_votes[0]), googleRow);
+  assert.equal(database.poll_votes.length, 2);
+  assert.equal(database.polls[0].participants, 2);
+  assert.deepEqual(database.polls[0].votes, [2, 0]);
+  assertNoAccountIdentity(viewed); assertNoAccountIdentity(claimed); assertNoAccountIdentity(changed);
+});
+
+test('older deployed claim conflict resolves read-only browser results without masking other permission errors', async () => {
+  authUser = null;
+  await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 200);
+  database.poll_votes[0].user_id = AUTH_USER_ID;
+  authUser = { id: REPORTER_ID, is_anonymous: false };
+  const before = JSON.stringify(database);
+  rpcFailure = { code: '42501', message: 'VOTE_REQUIRES_ACCOUNT' };
+  const resolved = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+  assert.equal(resolved.data.optionIndex, 1);
+  assert.equal(resolved.data.canChangeVote, false);
+  assert.equal(JSON.stringify(database), before);
+  assertNoAccountIdentity(resolved);
+  rpcFailure = { code: '42501', message: RAW_ERROR };
+  assertNoSecrets(await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 500));
+  assert.equal(JSON.stringify(database), before);
 });
 
 let failed = 0;
