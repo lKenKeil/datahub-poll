@@ -55,7 +55,24 @@ type IncrementVoteResponse = {
   participants: number;
   optionIndex: number;
   canChangeVote: boolean;
+  canCancelVote: boolean;
+  managementToken?: string;
+  viewerVote?: ViewerVote | null;
   changed?: boolean;
+};
+
+type ViewerVote = {
+  optionIndex: number;
+  canChangeVote: boolean;
+  canCancelVote: boolean;
+  managementToken?: string;
+};
+
+type CancelVoteResponse = {
+  id: string;
+  votes: number[];
+  participants: number;
+  viewerVote: ViewerVote | null;
 };
 
 type CommentView = CommentRow & {
@@ -69,7 +86,7 @@ type CommentView = CommentRow & {
 type PollDetailResponse = {
   poll?: DbPoll | null;
   comments?: CommentView[];
-  viewerVote?: { optionIndex: number; canChangeVote: boolean } | null;
+  viewerVote?: ViewerVote | null;
   reportable?: boolean;
   error?: string;
 };
@@ -167,7 +184,11 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
   const [hasViewerVote, setVoted] = useState(false);
   const [canChangeVote, setCanChangeVote] = useState(false);
+  const [canCancelVote, setCanCancelVote] = useState(false);
+  const [voteManagementToken, setVoteManagementToken] = useState<string | null>(null);
   const [isRevoting, setIsRevoting] = useState(false);
+  const [cancelConfirmationOpen, setCancelConfirmationOpen] = useState(false);
+  const [voteCancelling, setVoteCancelling] = useState(false);
   const [choice, setChoice] = useState<string | null>(null);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number | null>(null);
   const [barWidths, setBarWidths] = useState<number[]>([]);
@@ -221,6 +242,12 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const shareFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultRevealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resultBarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelVoteButtonRef = useRef<HTMLButtonElement | null>(null);
+  const keepVoteButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (cancelConfirmationOpen) keepVoteButtonRef.current?.focus();
+  }, [cancelConfirmationOpen]);
 
   useEffect(() => {
     try { setUserFingerprint(getOrCreateFingerprint()); } catch { /* Storage may be unavailable. */ }
@@ -243,8 +270,12 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     setViewerContextKey(null);
     setVoteIdentityError('');
     setVotePending(false);
+    setVoteCancelling(false);
+    setCancelConfirmationOpen(false);
     setVoted(false);
     setCanChangeVote(false);
+    setCanCancelVote(false);
+    setVoteManagementToken(null);
     setIsRevoting(false);
     setChoice(null);
     setSelectedOptionIndex(null);
@@ -386,6 +417,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         setReportTarget(null);
         setVoted(false);
         setCanChangeVote(false);
+        setCanCancelVote(false);
+        setVoteManagementToken(null);
+        setCancelConfirmationOpen(false);
         setIsRevoting(false);
         setChoice(null);
         setSelectedOptionIndex(null);
@@ -495,6 +529,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         setVoted(true);
         const changeAllowed = json.viewerVote?.canChangeVote === true;
         setCanChangeVote(changeAllowed);
+        const cancelAllowed = json.viewerVote?.canCancelVote === true;
+        setCanCancelVote(cancelAllowed);
+        setVoteManagementToken(json.viewerVote?.managementToken ?? null);
+        if (!cancelAllowed) setCancelConfirmationOpen(false);
         if (!changeAllowed) setIsRevoting(false);
         setChoice(visibleOptions[selectedOptionIndex as number]);
         setSelectedOptionIndex(selectedOptionIndex as number);
@@ -502,6 +540,10 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       } else {
         setVoted(false);
         setCanChangeVote(false);
+        setCanCancelVote(false);
+        setVoteManagementToken(null);
+        setIsRevoting(false);
+        setCancelConfirmationOpen(false);
         setChoice(null);
         setSelectedOptionIndex(null);
         setResultViewSource(null);
@@ -742,12 +784,25 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         return;
       }
       if (!response.ok || !json.data) throw new ApiResponseError(json.error ?? '투표 반영 실패', response.status);
+      if (
+        json.data.viewerVote === null
+        || !Number.isInteger(json.data.optionIndex)
+        || json.data.optionIndex < 0
+        || json.data.optionIndex >= pollData.options.length
+      ) {
+        voteInFlight.current = null;
+        setIsRevoting(false);
+        await fetchAllData({ silent: true });
+        return;
+      }
 
       setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
       setSelectedOptionIndex(json.data.optionIndex);
       setVoted(true);
       setCanChangeVote(json.data.canChangeVote === true);
+      setCanCancelVote(json.data.canCancelVote === true);
+      setVoteManagementToken(json.data.managementToken ?? null);
       setResultRevealAnimating(true);
       setBarWidths(pollData.options.map(() => 0));
       if (resultBarTimerRef.current) clearTimeout(resultBarTimerRef.current);
@@ -812,7 +867,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       const response = await fetch(`/api/polls/${pollData.id}/vote`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ optionIndex: idx }),
+        body: JSON.stringify({ optionIndex: idx, managementToken: voteManagementToken }),
       });
 
       const json = (await response.json()) as { data?: IncrementVoteResponse; error?: string; code?: string };
@@ -821,6 +876,9 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         if (json.code === 'VOTE_REQUIRES_ACCOUNT') {
           setIsRevoting(false);
           setCanChangeVote(false);
+          setCanCancelVote(false);
+          setVoteManagementToken(null);
+          setCancelConfirmationOpen(false);
           setActionError('이 브라우저에서 이미 참여했어요. 기존 결과를 확인할 수 있어요.');
           return;
         }
@@ -830,11 +888,24 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         return;
       }
       if (!response.ok || !json.data) throw new ApiResponseError(json.error ?? '투표 변경 실패', response.status);
+      if (
+        json.data.viewerVote === null
+        || !Number.isInteger(json.data.optionIndex)
+        || json.data.optionIndex < 0
+        || json.data.optionIndex >= pollData.options.length
+      ) {
+        voteInFlight.current = null;
+        setIsRevoting(false);
+        await fetchAllData({ silent: true });
+        return;
+      }
 
       setPollData((prev) => (prev ? { ...prev, votes: json.data!.votes, participants: json.data!.participants } : prev));
       setChoice(pollData.options[json.data.optionIndex] ?? pollData.options[idx]);
       setSelectedOptionIndex(json.data.optionIndex);
       setCanChangeVote(json.data.canChangeVote === true);
+      setCanCancelVote(json.data.canCancelVote === true);
+      setVoteManagementToken(json.data.managementToken ?? null);
       setBarWidths(calcPercentages(json.data.votes));
       setIsRevoting(false);
       trackVoteSubmitted({
@@ -863,6 +934,88 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       if (contextGeneration === voteContextGenerationRef.current) {
         if (voteInFlight.current === requestToken) voteInFlight.current = null;
         setVotePending(false);
+      }
+    }
+  };
+
+  const dismissCancelConfirmation = () => {
+    if (votePending) return;
+    setCancelConfirmationOpen(false);
+    cancelVoteButtonRef.current?.focus();
+  };
+
+  const handleCancelVote = async () => {
+    if (voteControlsDisabled || !canCancelVote || voteInFlight.current || !voted) return;
+    const requestToken = {};
+    const contextGeneration = voteContextGenerationRef.current;
+    voteInFlight.current = requestToken;
+    pollRequestGenerationRef.current += 1;
+    viewerReadRef.current = null;
+    setVotePending(true);
+    setVoteCancelling(true);
+    setActionError('');
+
+    try {
+      // The server resolves both account and HttpOnly browser participation.
+      // This opaque server token binds the already displayed ballot; it does
+      // not contain or replace the server-resolved account/browser identity.
+      const response = await fetch(`/api/polls/${pollData.id}/vote`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ managementToken: voteManagementToken }),
+      });
+      const json = (await response.json()) as { data?: CancelVoteResponse; error?: string };
+      if (contextGeneration !== voteContextGenerationRef.current || voteInFlight.current !== requestToken) return;
+      if (response.status === 409 || response.status === 404) {
+        // Another tab may have already removed this vote or hidden the poll.
+        voteInFlight.current = null;
+        setCancelConfirmationOpen(false);
+        await fetchAllData({ silent: true });
+        if (contextGeneration === voteContextGenerationRef.current) {
+          setActionError('투표 상태가 바뀌었어요. 최신 상태를 확인한 뒤 다시 시도해주세요.');
+        }
+        return;
+      }
+      if (!response.ok || !json.data || json.data.id !== pollData.id) {
+        throw new ApiResponseError('투표 취소 실패', response.status);
+      }
+
+      const updated = json.data;
+      const remainingVote = updated.viewerVote;
+      const remainingIndex = remainingVote?.optionIndex;
+      const hasRemainingVote = Number.isInteger(remainingIndex)
+        && (remainingIndex as number) >= 0
+        && (remainingIndex as number) < pollData.options.length;
+
+      // Account precedence may reveal another existing browser-linked row.
+      // Only the response can determine whether this viewer is now unvoted.
+      setPollData((prev) => (prev ? { ...prev, votes: updated.votes, participants: updated.participants } : prev));
+      setVoted(hasRemainingVote);
+      setChoice(hasRemainingVote ? pollData.options[remainingIndex as number] : null);
+      setSelectedOptionIndex(hasRemainingVote ? remainingIndex as number : null);
+      setCanChangeVote(hasRemainingVote && remainingVote?.canChangeVote === true);
+      setCanCancelVote(hasRemainingVote && remainingVote?.canCancelVote === true);
+      setVoteManagementToken(hasRemainingVote ? remainingVote?.managementToken ?? null : null);
+      setIsRevoting(false);
+      setCancelConfirmationOpen(false);
+      setVoteIdentityError('');
+      setResultViewSource(hasRemainingVote ? 'existing_vote' : null);
+      setResultRevealAnimating(false);
+      if (resultBarTimerRef.current) clearTimeout(resultBarTimerRef.current);
+      if (resultRevealTimerRef.current) clearTimeout(resultRevealTimerRef.current);
+      setBarWidths(calcPercentages(updated.votes));
+      lastSnapshotRef.current = '';
+      voteClaimRef.current = { key: voteContextKey, promise: Promise.resolve(true) };
+    } catch (error) {
+      if (contextGeneration !== voteContextGenerationRef.current || voteInFlight.current !== requestToken) return;
+      setActionError(error instanceof ApiResponseError && error.status === 429
+        ? '요청이 많아요. 잠시 후 다시 시도해주세요.'
+        : '투표를 취소하지 못했어요. 잠시 후 다시 시도해주세요.');
+    } finally {
+      if (contextGeneration === voteContextGenerationRef.current) {
+        if (voteInFlight.current === requestToken) voteInFlight.current = null;
+        setVotePending(false);
+        setVoteCancelling(false);
       }
     }
   };
@@ -1071,7 +1224,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     <p className="mt-2 text-sm text-muted dark:text-muted">{isRevoting ? '같은 선택지를 누르면 변경 없이 결과로 돌아가요.' : '선택하면 전체 결과를 확인할 수 있어요.'}</p>
                   </div>
                   {isRevoting ? (
-                    <button type="button" onClick={() => setIsRevoting(false)} className="text-sm font-black text-muted hover:text-link">취소</button>
+                    <button type="button" disabled={voteControlsDisabled} onClick={() => setIsRevoting(false)} className="min-h-11 rounded-xl px-3 text-sm font-bold text-muted hover:text-link disabled:cursor-wait disabled:opacity-60">취소</button>
                   ) : null}
                 </div>
                 <div className="relative mt-7 grid gap-3 sm:grid-cols-2">
@@ -1177,6 +1330,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                   {canChangeVote ? <button type="button" disabled={voteControlsDisabled} onClick={() => {
+                    setCancelConfirmationOpen(false);
                     setIsRevoting(true);
                   }} className="min-h-11 flex-1 rounded-xl border border-blue-500/40 px-5 py-3 text-sm font-bold text-link transition hover:border-blue-600 hover:bg-primary-soft disabled:cursor-wait disabled:opacity-60 dark:text-link dark:hover:bg-primary-soft">다시 투표하기</button> : null}
                   <button
@@ -1190,6 +1344,48 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                     {isSharing ? '공유 준비 중...' : '공유하기'}
                   </button>
                 </div>
+
+                {canCancelVote ? (
+                  <div className="mt-2">
+                    <button
+                      ref={cancelVoteButtonRef}
+                      type="button"
+                      disabled={voteControlsDisabled}
+                      aria-expanded={cancelConfirmationOpen}
+                      aria-controls="cancel-vote-confirmation"
+                      onClick={() => {
+                        setActionError('');
+                        setCancelConfirmationOpen(true);
+                      }}
+                      className="min-h-11 rounded-xl px-3 text-sm font-medium text-muted transition hover:text-ink disabled:cursor-wait disabled:opacity-60"
+                    >
+                      투표 취소
+                    </button>
+                    {cancelConfirmationOpen ? (
+                      <div
+                        id="cancel-vote-confirmation"
+                        role="group"
+                        aria-labelledby="cancel-vote-heading"
+                        aria-describedby="cancel-vote-description"
+                        aria-busy={voteCancelling}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape' && !votePending) {
+                            event.preventDefault();
+                            dismissCancelConfirmation();
+                          }
+                        }}
+                        className="mt-2 rounded-2xl border border-line bg-canvas p-4"
+                      >
+                        <p id="cancel-vote-heading" className="text-sm font-bold text-ink">투표를 취소할까요?</p>
+                        <p id="cancel-vote-description" className="mt-2 text-sm leading-relaxed text-muted">취소하면 이 질문의 참여자 수와 선택 결과에서 내 표가 제외됩니다.</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button ref={keepVoteButtonRef} type="button" disabled={votePending} onClick={dismissCancelConfirmation} className="min-h-11 rounded-xl border border-line px-4 text-sm font-bold text-ink disabled:cursor-wait disabled:opacity-60">취소하지 않기</button>
+                          <button type="button" disabled={voteControlsDisabled} onClick={() => void handleCancelVote()} className="min-h-11 rounded-xl px-4 text-sm font-bold text-muted hover:text-ink disabled:cursor-wait disabled:opacity-60">{voteCancelling ? '취소 중...' : '투표 취소'}</button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {nextPoll ? (
                   <div className="mt-8 border-t border-line pt-6 dark:border-line">

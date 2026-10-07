@@ -19,7 +19,9 @@ DB에 저장하지 않습니다. body/header의 user ID나 guest hash는 actor�
 계정은 서버의 `getUser()` 검증 결과를 사용합니다. 인증 확인 오류가 있는 요청을 guest로
 조용히 강등하지 않습니다.
 
-공개 viewer 상태는 `viewerVote.optionIndex`와 `viewerVote.canChangeVote`만 반환합니다. raw cookie, voter ID,
+공개 viewer 상태는 `optionIndex`, `canChangeVote`, `canCancelVote` 및 관리 가능한 표의
+비식별 `managementToken`만 반환합니다. 토큰은 ledger ID와 검증된 actor를 서명한 HMAC
+digest이며 식별자를 인코딩한 값이 아닙니다. raw cookie, voter ID,
 guest hash, 계정 ID, email, IP는 JSON 또는 analytics로 보내지 않습니다.
 viewer 응답은 `private, no-store`입니다. IP는 기존 abuse rate limit에만 사용합니다.
 `GUEST_ID_SECRET`을 교체하면 기존 guest hash를 다시 찾을 수 없으므로 안정적으로 유지하세요.
@@ -36,12 +38,12 @@ viewer 응답은 `private, no-store`입니다. IP는 기존 abuse rate limit에�
 다시 확인합니다. 로그인 전에 고른 option을 새 투표로 자동 제출하지 않습니다.
 account 투표가 없으면 소유되지 않은 guest 행, 다음으로 소유되지 않은 legacy 행을 claim합니다.
 행 수·votes·participants는 바꾸지 않습니다. guest hash는 claim 후에도 남겨 같은
-브라우저가 로그아웃해서 새 투표를 추가하는 것을 막습니다. 이 경우 guest는 선택과
-결과를 열람할 수 있으나 account에 연결된 선택 변경에는 원래 계정 로그인이 필요합니다.
+브라우저가 로그아웃해서 새 투표를 추가하는 것을 막습니다. 같은 browser hash는
+계정 연결 이후에도 그 기존 한 표를 변경·취소할 수 있습니다. user_id는 이전 계정에 유지합니다.
 
 현재 account의 투표가 없고 browser 행이 다른 account에 이미 연결됐다면, identity 충돌을
-오류로 취급하지 않습니다. 기존 선택을 결과 화면에 표시하고 `canChangeVote=false`로
-새 투표/변경을 막습니다. 계정 종류나 다른 account의 ID는 공개하지 않습니다.
+오류로 취급하지 않습니다. 기존 선택을 결과 화면에 표시하고 변경·취소를 허용하지만
+새 표를 만들거나 계정 귀속을 바꾸지 않습니다. 계정 종류나 다른 account의 ID는 공개하지 않습니다.
 claim RPC도 기존 선택을 정상 반환하되 user/hash를 재귀속하지 않으며 집계를 수정하지 않습니다.
 현재 account의 자체 투표가 있다면 언제나 그것이 우선하고 `canChangeVote=true`입니다.
 
@@ -50,6 +52,8 @@ account와 guest 투표가 이미 둘 다 존재하면 account 선택을 우선�
 집계가 두 표로 남을 수 있습니다. 단일 account 행에 여러 기기의 모든 guest hash를
 연결하는 별도 매핑은 이번 범위가 아닙니다.
 
+Legacy header만으로는 변경·취소하지 않습니다. 기존 safe claim이 verified account/browser
+proof를 연결한 뒤 관리할 수 있으며, 새 정책을 이유로 guest proof를 임의 생성하지 않습니다.
 Legacy claim의 `voterId`는 기존 브라우저 bearer credential입니다. 기존 계정에 연결된
 행이나 다른 guest hash에 연결된 행을 가로채지 않습니다. 유출된 과거 bearer ID가
 실제 원래 사람인지 증명할 수는 없습니다.
