@@ -7,6 +7,7 @@ import { AuthButton } from '@/components/auth-button';
 import { AuthPrompt } from '@/components/auth-prompt';
 import { useAuth } from '@/components/auth-provider';
 import { ProfileEditor } from '@/components/profile-editor';
+import { ProfileLoginMethods } from '@/components/profile-login-methods';
 
 export function ProfileSettings() {
   const { user, loading, profile, profileLoading, refreshProfile } = useAuth();
@@ -23,6 +24,7 @@ export function ProfileSettings() {
           : !user ? <AuthPrompt message="프로필을 설정하려면 로그인해주세요." returnTo="/profile" />
           : profile ? <section className="rounded-3xl border border-line bg-surface p-5"><ProfileEditor key={user.id} profile={profile} /></section>
           : <div role="status" className="space-y-3"><p className="text-sm text-muted">프로필을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p><button type="button" onClick={() => void refreshProfile()} className="min-h-11 rounded-xl border border-line px-4 text-sm font-medium">다시 불러오기</button></div>}
+        {!loading && user ? <ProfileLoginMethods key={user.id} userId={user.id} /> : null}
       </main>
     </div>
   );

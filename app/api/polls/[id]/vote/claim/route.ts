@@ -7,6 +7,7 @@ import { isModerationMigrationMissing, moderationErrorResponse } from "@/lib/con
 import {
   accountVotingMigrationResponse,
   getPollViewerVote,
+  getPollVoteIdentityStatus,
   isAccountVotingMigrationMissing,
   PRIVATE_VOTE_HEADERS,
   withPrivateVoteHeaders,
@@ -86,6 +87,7 @@ export async function POST(request: Request, context: Context) {
         ...viewerVote,
       } : null,
       mode: "rpc",
+      viewerIdentityStatus: getPollVoteIdentityStatus(actor),
     }, { headers: PRIVATE_VOTE_HEADERS }));
   } catch (error) {
     logPublicMutationError("vote-claim-unexpected", error);

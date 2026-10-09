@@ -365,6 +365,9 @@ function cookieJar(initial = []) {
 }
 const overrides = {
   "server-only": {},
+  // Dedicated auth-flow tests cover signed cookies. Existing callback
+  // regressions simulate the backwards-compatible, no-intent request here.
+  "next/headers": { cookies: async () => ({ get: () => undefined, set: () => {} }) },
   "next/server": { NextRequest: nativeRequire('next/server').NextRequest, NextResponse: class extends Response {
     static json(body, options) { return nativeRequire('next/server').NextResponse.json(body, options); }
     static redirect(url, options) { return new Response(null, { status: 307, ...options, headers: { ...options?.headers, Location: String(url) } }); }
@@ -2061,9 +2064,51 @@ test('public question remains readable during Auth failure without fallback view
     const response = await detail.GET(request('GET', undefined, { 'x-voter-id': VOTER_ID }), context());
     const json = await responseJson(response, 200);
     assert.ok(json.poll); assert.equal(json.viewerVote, null);
+    assert.equal(json.viewerIdentityStatus, 'unavailable', 'public read is not a verified unvoted visitor');
     assert.equal(response.headers.get('set-cookie'), null);
     assert.equal(calls.filter(row => row.rpc).length, 0);
     assertNoAccountIdentity(json);
+  }
+});
+
+test('guest sign-in cookie hydration and subsequent Auth outage fail closed without altering the ballot', async () => {
+  const { isPollVoteIdentityReady } = loadModule('lib/poll-vote-identity-request.ts');
+  for (const provider of ['google', 'kakao']) {
+    reset();
+    authUser = null;
+    await responseJson(await votes.POST(request('POST', { optionIndex: 0 }, { cookie: GUEST_COOKIE }), context()), 200);
+    const rowId = database.poll_votes[0].id;
+    const aggregate = JSON.stringify(database.polls[0]);
+    // Browser has completed OAuth but the request still sees pre-login cookies.
+    const pendingClaim = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+    assert.equal(pendingClaim.viewerIdentityStatus, 'guest');
+    assert.equal(isPollVoteIdentityReady(pendingClaim.viewerIdentityStatus, true), false);
+    assert.equal(database.poll_votes[0].user_id, null);
+    authUser = { id: AUTH_USER_ID, is_anonymous: false, app_metadata: { provider } };
+    const claimed = await responseJson(await voteClaim.POST(request('POST', {}, { cookie: GUEST_COOKIE }), context()), 200);
+    assert.equal(claimed.viewerIdentityStatus, 'account');
+    assert.equal(claimed.data.optionIndex, 0);
+    assert.equal(isPollVoteIdentityReady(claimed.viewerIdentityStatus, true), true);
+    assert.equal(database.poll_votes[0].user_id, AUTH_USER_ID);
+    assert.equal(database.poll_votes[0].id, rowId);
+    assert.equal(database.poll_votes.length, 1);
+    assert.equal(JSON.stringify(database.polls[0]), aggregate);
+    authFailure = { name: 'AuthRetryableFetchError', status: 503 };
+    const interrupted = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
+    assert.ok(interrupted.poll);
+    assert.equal(interrupted.viewerVote, null);
+    assert.equal(interrupted.viewerIdentityStatus, 'unavailable');
+    assert.equal(isPollVoteIdentityReady(interrupted.viewerIdentityStatus, true), false,
+      'a successful earlier claim cannot authorize a fresh POST after an unverified public read');
+    authFailure = null;
+    const recovered = await responseJson(await detail.GET(request('GET', undefined, { cookie: GUEST_COOKIE }), context()), 200);
+    assert.equal(recovered.viewerIdentityStatus, 'account');
+    assertViewerVote(recovered.viewerVote, { optionIndex: 0, canChangeVote: true, canCancelVote: true });
+    await responseJson(await votes.POST(request('POST', { optionIndex: 1 }, { cookie: GUEST_COOKIE }), context()), 409);
+    assert.equal(database.poll_votes.length, 1);
+    assert.equal(database.poll_votes[0].id, rowId);
+    assert.equal(JSON.stringify(database.polls[0]), aggregate);
+    for (const json of [pendingClaim, claimed, interrupted, recovered]) assertNoAccountIdentity(json);
   }
 });
 

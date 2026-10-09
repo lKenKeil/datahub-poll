@@ -3,8 +3,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { getSupabaseAuthBrowserClient } from '@/lib/supabase-auth-browser';
-import { getSafeAuthReturnPath } from '@/lib/auth-redirect';
 import { normalizeLoginEmail, sendEmailLoginCode, verifyEmailLoginCode } from '@/lib/email-auth';
+import { finishEmailAuthFlow, prepareAuthFlow } from '@/lib/auth-flow-client';
 
 export function EmailAuthForm({ returnTo, disabled, onBusyChange }: {
   returnTo: string; disabled: boolean; onBusyChange: (busy: boolean) => void;
@@ -41,6 +41,7 @@ export function EmailAuthForm({ returnTo, disabled, onBusyChange }: {
     setResendAt(Date.now() + 60_000);
     setRemaining(60);
     try {
+      if (!await prepareAuthFlow('login', 'email', returnTo)) throw new Error('Login flow could not start.');
       const ok = await sendEmailLoginCode(getSupabaseAuthBrowserClient(), normalized);
       if (ok) { setSentEmail(normalized); setCode(''); }
       else setError('인증 메일을 요청하지 못했어요. 잠시 후 다시 시도해주세요.');
@@ -60,7 +61,7 @@ export function EmailAuthForm({ returnTo, disabled, onBusyChange }: {
     try {
       const ok = await verifyEmailLoginCode(getSupabaseAuthBrowserClient(), sentEmail, code);
       if (!ok) { setError('인증 코드를 확인해주세요. 만료됐다면 다시 요청해주세요.'); return; }
-      router.replace(getSafeAuthReturnPath(returnTo));
+      router.replace(await finishEmailAuthFlow(returnTo));
       router.refresh();
     } catch { setError('인증을 완료하지 못했어요. 잠시 후 다시 시도해주세요.'); }
     finally { inFlight.current = false; setPending(false); onBusyChange(false); }

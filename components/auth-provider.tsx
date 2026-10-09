@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { getSupabaseAuthBrowserClient } from '@/lib/supabase-auth-browser';
 import { getSafeAuthReturnPath } from '@/lib/auth-redirect';
@@ -8,6 +8,8 @@ import { EmailAuthForm } from '@/components/auth-email-form';
 import { ProfileOnboarding } from '@/components/profile-onboarding';
 import { parseAccountProfile, type AccountProfile } from '@/lib/profile';
 import { PolicyLinks } from '@/components/policy-links';
+import { consumeSuccessfulLoginProvider, startOAuthFlow } from '@/lib/auth-flow-client';
+import { getLastLoginProvider, subscribeLoginProvider } from '@/lib/auth-flow';
 
 type LoginRequest = { message: string; returnTo: string };
 type AuthState = {
@@ -31,6 +33,7 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
   const [pending, setPending] = useState<'google' | 'kakao' | null>(null);
   const [error, setError] = useState('');
   const [emailPending, setEmailPending] = useState(false);
+  const recentProvider = useSyncExternalStore(subscribeLoginProvider, getLastLoginProvider, () => null);
   const inFlight = useRef(false);
   const signIn = async (provider: 'google' | 'kakao') => {
     if (inFlight.current || emailPending) return;
@@ -38,12 +41,8 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
     setPending(provider);
     setError('');
     try {
-      const callback = new URL('/auth/callback', window.location.origin);
-      callback.searchParams.set('next', getSafeAuthReturnPath(returnTo));
-      const { data, error: authError } = await getSupabaseAuthBrowserClient().auth.signInWithOAuth({
-        provider, options: { redirectTo: callback.toString() },
-      });
-      if (authError || !data.url) throw new Error('OAuth could not start.');
+      const result = await startOAuthFlow({ mode: 'login', provider, returnTo });
+      if (!result.ok) throw new Error('OAuth could not start.');
     } catch {
       setError('로그인을 시작하지 못했어요. 잠시 후 다시 시도해주세요.');
       inFlight.current = false;
@@ -52,6 +51,7 @@ export function OAuthButtons({ returnTo }: { returnTo: string }) {
   };
   return (
     <div className="space-y-3" aria-busy={pending !== null}>
+      {recentProvider ? <p className="text-xs text-muted">최근 사용: {recentProvider === 'google' ? 'Google' : recentProvider === 'kakao' ? '카카오' : '이메일'}</p> : null}
       <button type="button" disabled={pending !== null || emailPending} onClick={() => void signIn('google')} className="min-h-11 w-full rounded-xl border border-line bg-surface px-4 py-3 text-sm font-bold text-ink disabled:opacity-60">{pending === 'google' ? '연결 중...' : 'Google로 계속하기'}</button>
       <button type="button" disabled={pending !== null || emailPending} onClick={() => void signIn('kakao')} className="min-h-11 w-full rounded-xl bg-primary px-4 py-3 text-sm font-bold text-white hover:bg-primary-hover disabled:opacity-60">{pending === 'kakao' ? '연결 중...' : '카카오로 계속하기'}</button>
       <div className="flex items-center gap-3 py-1 text-xs text-muted"><span className="h-px flex-1 bg-line" /><span>또는</span><span className="h-px flex-1 bg-line" /></div>
@@ -109,6 +109,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (currentUserId.current === userId && profileRequestVersion.current === version) setProfileState({ userId, data: null });
       return null;
     }
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) void consumeSuccessfulLoginProvider();
   }, [userId]);
 
   useEffect(() => {

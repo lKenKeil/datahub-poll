@@ -15,7 +15,7 @@ import { POLLS } from '../../../data/polls';
 import { CommentRow, DbPoll } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { getStoredLegacyVoterId } from '@/lib/voter-id';
-import { fetchPollVoteIdentity } from '@/lib/poll-vote-identity-request';
+import { claimPollVoteIdentity, fetchPollVoteIdentity, isPollVoteIdentityReady } from '@/lib/poll-vote-identity-request';
 import {
   getPollOptionImagePublicUrl,
   normalizeOptionImagePaths,
@@ -87,6 +87,7 @@ type PollDetailResponse = {
   poll?: DbPoll | null;
   comments?: CommentView[];
   viewerVote?: ViewerVote | null;
+  viewerIdentityStatus?: 'account' | 'guest' | 'unavailable';
   reportable?: boolean;
   error?: string;
 };
@@ -364,18 +365,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         if (voteClaimRef.current?.key !== voteContextKey) {
           voteClaimRef.current = {
             key: voteContextKey,
-            promise: fetchPollVoteIdentity(`/api/polls/${dbPollId}/vote/claim`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(voterId ? { voterId } : {}),
-            }).then((response) => response.ok).catch(() => false),
+            promise: claimPollVoteIdentity(dbPollId, voterId, Boolean(user?.id)),
           };
         }
         const currentClaim = voteClaimRef.current;
         claimSucceeded = await currentClaim.promise;
         if (generation !== pollRequestGenerationRef.current) return;
-        // Failed reconciliation can be retried. A successful viewer read below
-        // may still prove browser participation, which is not an identity error.
+        // A failed/mismatched reconciliation is never cached as success.
         if (!claimSucceeded && voteClaimRef.current === currentClaim) voteClaimRef.current = null;
       }
       const readKey = `${voteContextKey}:${commentSort}`;
@@ -430,6 +426,13 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         return;
       }
       setPollLoadError('');
+      const identityReady = isPollVoteIdentityReady(json.viewerIdentityStatus, Boolean(user?.id));
+      if (!identityReady) voteClaimRef.current = null;
+      // A public read can succeed even when server Auth verification fails.
+      // Neither that null viewer nor a pending account cookie proves unvoted.
+      setVoteIdentityError(claimSucceeded && identityReady
+        ? ''
+        : '기존 투표를 확인하지 못했어요. 잠시 후 다시 확인해주세요.');
 
       const dbPoll = json.poll as DbPollWithOfficialFact | null;
       setReportable(Boolean(dbPoll) && json.reportable !== false);
@@ -450,6 +453,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
             }
           : null,
         viewerVote: json.viewerVote ?? null,
+        viewerIdentityStatus: json.viewerIdentityStatus,
         comments: dbComments.map((comment) => ({
           id: comment.id,
           parent_id: comment.parent_id,
@@ -466,7 +470,6 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       });
 
       if (silent && lastSnapshotRef.current === snapshot) {
-        if (claimSucceeded) setVoteIdentityError('');
         setSyncState('live');
         return;
       }
@@ -548,9 +551,6 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         setSelectedOptionIndex(null);
         setResultViewSource(null);
       }
-      setVoteIdentityError(claimSucceeded || hasViewerVote
-        ? ''
-        : '기존 투표를 확인하지 못했어요. 잠시 후 다시 확인해주세요.');
 
       if (
         !silent
@@ -1332,7 +1332,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
                   {canChangeVote ? <button type="button" disabled={voteControlsDisabled} onClick={() => {
                     setCancelConfirmationOpen(false);
                     setIsRevoting(true);
-                  }} className="min-h-11 flex-1 rounded-xl border border-blue-500/40 px-5 py-3 text-sm font-bold text-link transition hover:border-blue-600 hover:bg-primary-soft disabled:cursor-wait disabled:opacity-60 dark:text-link dark:hover:bg-primary-soft">다시 투표하기</button> : null}
+                  }} className="min-h-11 flex-1 rounded-xl border border-blue-500/40 px-5 py-3 text-sm font-bold text-link transition hover:border-blue-600 hover:bg-primary-soft disabled:cursor-wait disabled:opacity-60 dark:text-link dark:hover:bg-primary-soft">선택 변경</button> : null}
                   <button
                     type="button"
                     onClick={() => void handleShare()}

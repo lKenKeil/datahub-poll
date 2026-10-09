@@ -13,6 +13,14 @@ export type PollViewerVote = {
   managementToken?: string;
 };
 
+// Public question reads remain available during an Auth outage. A null vote
+// in that response must not be mistaken for a verified, unvoted visitor.
+export function getPollVoteIdentityStatus(actor: PollVoteActor): 'account' | 'guest' | 'unavailable' {
+  if (!actor.viewerVerified) return 'unavailable';
+  if (actor.userId) return 'account';
+  return actor.guestHash ? 'guest' : 'unavailable';
+}
+
 function managementToken(pollId: string, rowId: string, actor: PollVoteActor) {
   const secret = process.env.GUEST_ID_SECRET?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!secret) throw new Error("Vote management identity is unavailable.");

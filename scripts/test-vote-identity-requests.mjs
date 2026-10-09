@@ -9,7 +9,7 @@ const compiled = ts.transpileModule(source, { compilerOptions: {
 } }).outputText;
 const mod = { exports: {} };
 new Function('module', 'exports', compiled)(mod, mod.exports);
-const { fetchPollVoteIdentity } = mod.exports;
+const { claimPollVoteIdentity, fetchPollVoteIdentity, isPollVoteIdentityReady } = mod.exports;
 const originalFetch = globalThis.fetch;
 let browserCookie = null;
 const requests = [];
@@ -56,7 +56,48 @@ try {
   requests[3].finish();
   assert.ok((await retry) instanceof Response);
   assert.ok(requests.every(request => request.cookie === requests[0].cookie));
+  for (const signedIn of [true, false]) {
+    for (const unresolved of [undefined, null, 'unavailable', 'invalid', {}]) {
+      assert.equal(isPollVoteIdentityReady(unresolved, signedIn), false);
+    }
+    assert.equal(isPollVoteIdentityReady(signedIn ? 'account' : 'guest', signedIn), true);
+    assert.equal(isPollVoteIdentityReady(signedIn ? 'guest' : 'account', signedIn), false);
+  }
+  const claimCalls = [];
+  let claimReply = { mode: 'rpc', viewerIdentityStatus: 'guest', data: null };
+  let claimStatus = 200;
+  let invalidJson = false;
+  let failNetwork = false;
+  globalThis.fetch = async (input, init) => {
+    claimCalls.push({ input, init });
+    if (failNetwork) throw new Error('mock-only failure');
+    return new Response(invalidJson ? 'not-json' : JSON.stringify(claimReply), { status: claimStatus });
+  };
+  assert.equal(await claimPollVoteIdentity('P', '', true), false,
+    'account hydration must not accept a successful guest claim as account reconciliation');
+  assert.equal(await claimPollVoteIdentity('P', '', false), true);
+  for (const provider of ['google', 'kakao']) {
+    claimReply = { mode: 'rpc', viewerIdentityStatus: 'unavailable', data: null };
+    assert.equal(await claimPollVoteIdentity('P', '', true), false, `${provider}: unknown viewer never means unvoted`);
+    claimReply = { mode: 'rpc', viewerIdentityStatus: 'account', data: { optionIndex: 0 } };
+    assert.equal(await claimPollVoteIdentity('P', 'mock-legacy-id', true), true, `${provider}: retry can claim after cookie hydration`);
+    assert.deepEqual(JSON.parse(claimCalls.at(-1).init.body), { voterId: 'mock-legacy-id' });
+    assert.equal(claimCalls.at(-1).input, '/api/polls/P/vote/claim');
+  }
+  claimReply = { viewerIdentityStatus: 'account' };
+  assert.equal(await claimPollVoteIdentity('P', '', true), false, 'unexpected HTTP 200 body is not claim success');
+  claimReply = { mode: 'rpc', viewerIdentityStatus: 'account', data: null };
+  claimStatus = 503;
+  assert.equal(await claimPollVoteIdentity('P', '', true), false);
+  claimStatus = 200; invalidJson = true;
+  assert.equal(await claimPollVoteIdentity('P', '', true), false);
+  invalidJson = false; failNetwork = true;
+  assert.equal(await claimPollVoteIdentity('P', '', true), false);
+  failNetwork = false;
+  assert.equal(await claimPollVoteIdentity('P', '', true), true,
+    'failures do not poison a later reconciliation request');
   console.log('PASS changed-query bootstrap ordering, poll/actor transition ordering, stable cookie, unchanged request options and recovery after failed reads. No live requests.');
+  console.log('PASS guest/account mode verification, Google/Kakao claim retries, malformed/unavailable/failed claim safety. No live requests.');
 } finally {
   globalThis.fetch = originalFetch;
 }

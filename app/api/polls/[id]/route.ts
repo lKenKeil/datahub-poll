@@ -6,6 +6,7 @@ import { isValidVoterId } from "@/lib/voter-id";
 import {
   accountVotingMigrationResponse,
   getPollViewerVote,
+  getPollVoteIdentityStatus,
   isAccountVotingMigrationMissing,
   withPrivateVoteHeaders,
 } from "@/lib/poll-vote-server";
@@ -207,7 +208,7 @@ export async function GET(request: Request, context: Context) {
       // A genuinely DB-less static question remains readable, but cannot be
       // reported or mutated as though it were a persisted poll.
       return finish(NextResponse.json(
-        { poll: null, comments: [], viewerVote: null, reportable: false },
+        { poll: null, comments: [], viewerVote: null, viewerIdentityStatus: getPollVoteIdentityStatus(actor), reportable: false },
         { headers },
       ));
     }
@@ -313,7 +314,8 @@ export async function GET(request: Request, context: Context) {
         ...serializePublicPoll(poll),
         ...getPollStructuralEditState(poll, (commentStates ?? []).length > 0, hasAnyVotes),
       },
-      comments: sortComments(enriched as Array<Record<string, unknown> & { id: unknown }>, parseCommentSort(new URL(request.url).searchParams.get('comments'))), viewerVote, reportable: true,
+      comments: sortComments(enriched as Array<Record<string, unknown> & { id: unknown }>, parseCommentSort(new URL(request.url).searchParams.get('comments'))), viewerVote,
+      viewerIdentityStatus: getPollVoteIdentityStatus(actor), reportable: true,
     }, { headers }));
   } catch (error) {
     if (isAccountVotingMigrationMissing(error)) return accountVotingMigrationResponse();

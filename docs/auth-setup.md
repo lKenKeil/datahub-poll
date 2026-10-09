@@ -25,10 +25,14 @@ For project `ckacekbnzfuoiazicxil`, configure Authentication → URL Configurati
 - Site URL: `https://askio.quest`
 - Redirect URLs: `https://askio.quest/auth/callback` and
   `http://localhost:3000/auth/callback`
-- Also allow `http://localhost:3000/auth/callback?next=**` for the app's encoded
-  return-path query on localhost. The exact callback path alone does not match
-  a query-bearing URL in the allow list. This is limited to the callback route,
-  not a whole-site wildcard. Production uses the configured Site URL origin.
+- Identity linking also uses the fixed application callback
+  `https://askio.quest/auth/callback/link` (and
+  `http://localhost:3000/auth/callback/link` for local testing).
+- New login/link requests use these exact callback URLs, without a `next`
+  query. The validated return path is preserved in a short-lived, signed
+  first-party HttpOnly cookie. Keep historical query-bearing callback entries
+  only if they are still needed for in-progress/older deployments; no new
+  whole-site wildcard is necessary.
 - If testing a different local port, explicitly allow its callback URL too.
   Do not add broad production redirect wildcards.
 
@@ -99,3 +103,6 @@ Official setup references:
 [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls),
 [Google](https://supabase.com/docs/guides/auth/social-login/auth-google),
 [Kakao](https://supabase.com/docs/guides/auth/social-login/auth-kakao).
+
+For canonical accounts, explicit identity linking, login return paths and
+guest-vote reconciliation, see [Auth identity and sign-in flow](auth-identity-flow.md).
