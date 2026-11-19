@@ -51,6 +51,7 @@ const PRIVATE_TEXT = "hidden-original-must-not-leave-server";
 const RAW_ERROR = "raw-sql-constraint-secret-must-not-leave-server";
 const AUTH_USER_ID = "99999999-9999-4999-8999-999999999999";
 const OFFICIAL_ACCOUNT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const OTHER_OFFICIAL_ACCOUNT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const PROFILE_NICKNAME = "느긋한펭귄4821";
 const PROFILE_AVATAR = "https://avatar.example.invalid/public-profile.png";
 
@@ -77,7 +78,7 @@ function reset() {
       votes: [0, 0], participants: 0, official_fact: null, option_image_paths: null,
       created_at: new Date().toISOString(), edit_lock_mode: "first_vote", is_hidden: false,
     }],
-    comments: [], poll_votes: [], comment_reactions: [], deleted_official_polls: [],
+    comments: [], poll_votes: [], comment_reactions: [], deleted_official_polls: [], official_poll_publishers: [],
     profiles: [{ id: AUTH_USER_ID, nickname: PROFILE_NICKNAME, avatar_url: PROFILE_AVATAR,
       onboarding_completed: false, show_avatar: false, created_at: "2026-10-01", updated_at: "2026-10-01" }],
     poll_ownership: [{ poll_id: POLL_ID, owner_token_hash: createHash("sha256").update(OWNER_TOKEN).digest("hex") }],
@@ -195,13 +196,21 @@ function supabaseClient(role) {
         if (name === "recommend_user_profile_nickname") profile.nickname = "졸린수달6142";
         return { data: { ...profile }, error: null };
       }
-      if (name === "create_owned_poll_with_author") {
+      if (name === "create_poll_with_management") {
         assert.equal(role, "service");
+        const publisher = database.official_poll_publishers.find(row => row.user_id === payload.p_author_user_id);
+        if (publisher?.active === false) {
+          return { data: null, error: { code: "42501", message: "OFFICIAL_PUBLISHER_INACTIVE" } };
+        }
         database.polls.push({ id: payload.p_poll_id, title: payload.p_title, category: payload.p_category,
           options: payload.p_options, votes: payload.p_votes, participants: payload.p_participants,
           author_user_id: payload.p_author_user_id, is_anonymous: payload.p_is_anonymous,
           is_hidden: false });
-        return { data: payload.p_poll_id, error: null };
+        database.poll_ownership.push({
+          poll_id: payload.p_poll_id,
+          owner_token_hash: publisher ? null : payload.p_owner_token_hash,
+        });
+        return { data: Boolean(publisher), error: null };
       }
       if (name === "update_owned_poll") {
         const poll = database.polls.find((row) => row.id === payload.p_poll_id);
@@ -551,6 +560,7 @@ test("guest detail shows the verified public poll author without exposing accoun
   authUser = null;
   const poll = database.polls[0];
   poll.author_user_id = OFFICIAL_ACCOUNT_ID;
+  database.poll_ownership[0].owner_token_hash = null;
   poll.is_anonymous = false;
   poll.votes = [2, 1];
   poll.participants = 3;
@@ -559,6 +569,7 @@ test("guest detail shows the verified public poll author without exposing accoun
     assert.deepEqual(json.poll.author, { name: "ASKIO 공식", isOfficial: true });
     assert.deepEqual(json.poll.votes, [2, 1]);
     assert.equal(json.poll.participants, 3);
+    assert.equal(json.canManageByAccount, false);
     assert.ok(!JSON.stringify(json).includes(OFFICIAL_ACCOUNT_ID));
   }
   const publicList = await responseJson(await list.GET(), 200);
@@ -567,6 +578,7 @@ test("guest detail shows the verified public poll author without exposing accoun
   poll.is_anonymous = true;
   assert.equal((await responseJson(await detail.GET(request(), context()), 200)).poll.author, null);
   poll.is_anonymous = false;
+  database.poll_ownership[0].owner_token_hash = createHash("sha256").update(OWNER_TOKEN).digest("hex");
   poll.author_user_id = AUTH_USER_ID;
   const member = await responseJson(await detail.GET(request(), context()), 200);
   assert.deepEqual(member.poll.author, { name: PROFILE_NICKNAME, isOfficial: false });
@@ -580,8 +592,8 @@ test("guest detail shows the verified public poll author without exposing accoun
 });
 
 test("poll author is withheld if the final visibility recheck sees anonymity change", async () => {
-  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID;
   Object.assign(database.polls[0], { author_user_id: OFFICIAL_ACCOUNT_ID, is_anonymous: false });
+  database.poll_ownership[0].owner_token_hash = null;
   queryHook = (query) => {
     if (query.table === "polls" && query.role === "service"
       && calls.filter((call) => call.role === "service" && call.table === "polls").length === 2) {
@@ -1086,7 +1098,7 @@ test("cross-origin protected mutations fail403 before auth or DB writes", async 
 test("authenticated poll creation preserves owner RPC wrapper and zero initial vote data", async () => {
   const before = JSON.stringify(database.polls[0]);
   const json = await responseJson(await list.POST(request("POST", createBody, { origin: "https://example.invalid" })), 200);
-  const call = calls.find((entry) => entry.rpc === "create_owned_poll_with_author");
+  const call = calls.find((entry) => entry.rpc === "create_poll_with_management");
   assert.equal(call.role, "service");
   assert.deepEqual(call.payload.p_votes, [0, 0]);
   assert.equal(call.payload.p_participants, 0);
@@ -1100,30 +1112,80 @@ test("authenticated poll creation preserves owner RPC wrapper and zero initial v
 
 test("forged official fields cannot change creation authorship or profile status", async () => {
   process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID;
-  const forged = { author_user_id: OFFICIAL_ACCOUNT_ID, isOfficial: true };
-  await responseJson(await list.POST(request("POST", { ...createBody, ...forged }, {}), context()), 200);
-  assert.equal(calls.find((entry) => entry.rpc === "create_owned_poll_with_author").payload.p_author_user_id, AUTH_USER_ID);
+  database.official_poll_publishers.push({ user_id: OFFICIAL_ACCOUNT_ID, active: true });
+  const forged = { author_user_id: OFFICIAL_ACCOUNT_ID, isOfficial: true, accountManaged: true };
+  const result = await responseJson(await list.POST(request("POST", { ...createBody, ...forged }, {}), context()), 200);
+  assert.equal(calls.find((entry) => entry.rpc === "create_poll_with_management").payload.p_author_user_id, AUTH_USER_ID);
+  assert.ok(result.data.ownerToken);
+  assert.equal(result.data.accountManaged, undefined);
   assert.equal(validateNickname("ASKIO 공식").ok, false);
   await responseJson(await profileRoute.PATCH(request("PATCH", { showAvatar: false, isOfficial: true }), context()), 400);
   assert.ok(!calls.some((entry) => entry.table === "profiles" && entry.update));
 });
 
-test("official poll owner mutations require its verified session and the existing owner token", async () => {
-  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID;
+test("enrolled publishers create account-managed polls without issuing a browser token", async () => {
+  const publisher = { user_id: OFFICIAL_ACCOUNT_ID, active: true };
+  database.official_poll_publishers.push(publisher);
+  authUser = { id: OFFICIAL_ACCOUNT_ID, is_anonymous: false };
+  const created = await responseJson(await list.POST(request("POST", createBody), context()), 200);
+  assert.equal(created.data.accountManaged, true);
+  assert.equal(created.data.ownerToken, undefined);
+  assert.equal(database.poll_ownership.find(row => row.poll_id === created.data.id).owner_token_hash, null);
+  publisher.active = false;
+  await responseJson(await list.POST(request("POST", createBody), context()), 403);
+  assert.equal(database.polls.length, 2);
+});
+
+test("official poll owner mutations depend on persisted management and verified authorship", async () => {
   const poll = database.polls[0];
   poll.author_user_id = OFFICIAL_ACCOUNT_ID;
+  const publisher = { user_id: OFFICIAL_ACCOUNT_ID, active: true };
+  database.official_poll_publishers.push(publisher);
+  const tokenHash = database.poll_ownership[0].owner_token_hash;
+  database.poll_ownership[0].owner_token_hash = null;
   const token = { "x-poll-owner-token": OWNER_TOKEN };
   const edit = { officialFact: "검증된 편집" };
 
-  for (const method of ["PATCH", "DELETE"]) {
-    await responseJson(await detail[method](request(method, method === "PATCH" ? edit : undefined, token), context()), 403);
+  // A formerly valid token is useless for an account-managed poll, including
+  // after a missing, malformed or different valid legacy env configuration.
+  for (const legacySetting of [undefined, "not-a-uuid", AUTH_USER_ID]) {
+    if (legacySetting === undefined) delete process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID;
+    else process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = legacySetting;
+    for (const method of ["PATCH", "DELETE"]) {
+      await responseJson(await detail[method](request(method, method === "PATCH" ? edit : undefined, token), context()), 403);
+    }
   }
+  assert.equal((await responseJson(await detail.GET(request(), context()), 200)).canManageByAccount, false);
+  database.official_poll_publishers.push({ user_id: OTHER_OFFICIAL_ACCOUNT_ID, active: true });
+  authUser = { id: OTHER_OFFICIAL_ACCOUNT_ID, is_anonymous: false };
+  await responseJson(await detail.PATCH(request("PATCH", edit), context()), 403);
+  await responseJson(await detail.DELETE(request("DELETE"), context()), 403);
+  assert.equal((await responseJson(await detail.GET(request(), context()), 200)).canManageByAccount, false);
   authUser = null;
   await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 403);
+  authUser = { id: OFFICIAL_ACCOUNT_ID, is_anonymous: true };
+  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 403);
   authUser = { id: OFFICIAL_ACCOUNT_ID, is_anonymous: false };
-  await responseJson(await detail.DELETE(request("DELETE"), context()), 403);
-  await responseJson(await detail.PATCH(request("PATCH", edit, { ...token, origin: "https://other.invalid" }), context()), 403);
+  authFailure = { message: RAW_ERROR };
+  await responseJson(await detail.DELETE(request("DELETE", undefined, token), context()), 403);
+  authFailure = null;
+  await responseJson(await detail.PATCH(request("PATCH", edit, { origin: "https://other.invalid" }), context()), 403);
+  await responseJson(await detail.DELETE(request("DELETE", undefined, { "sec-fetch-site": "cross-site" }), context()), 403);
+  publisher.active = false;
+  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 403);
+  assert.equal((await responseJson(await detail.GET(request(), context()), 200)).canManageByAccount, false);
+  publisher.active = true;
+  queryFailure = { table: "official_poll_publishers", error: { message: RAW_ERROR } };
+  assertNoSecrets(await responseJson(await detail.PATCH(request("PATCH", edit), context()), 500));
+  queryFailure = null;
+  database.official_poll_publishers = [];
+  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 403);
+  database.official_poll_publishers = [publisher];
+  poll.author_user_id = null;
+  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 403);
+
   poll.author_user_id = AUTH_USER_ID;
+  database.poll_ownership[0].owner_token_hash = tokenHash;
   for (const method of ["PATCH", "DELETE"]) {
     await responseJson(await detail[method](request(method, method === "PATCH" ? edit : undefined, token), context()), 403);
   }
@@ -1132,9 +1194,13 @@ test("official poll owner mutations require its verified session and the existin
   authUser = null;
   await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 200);
   poll.author_user_id = OFFICIAL_ACCOUNT_ID;
+  database.poll_ownership[0].owner_token_hash = null;
   authUser = { id: OFFICIAL_ACCOUNT_ID, is_anonymous: false };
-  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 200);
-  await responseJson(await detail.DELETE(request("DELETE", undefined, token), context()), 200);
+  const ownerView = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(ownerView.canManageByAccount, true);
+  assert.ok(!JSON.stringify(ownerView).includes(OFFICIAL_ACCOUNT_ID));
+  await responseJson(await detail.PATCH(request("PATCH", edit), context()), 200);
+  await responseJson(await detail.DELETE(request("DELETE"), context()), 200);
   assert.ok(calls.some((entry) => entry.rpc === "delete_poll_with_dependents"));
 });
 
@@ -1481,7 +1547,7 @@ test("multipart poll anonymous flag supports explicit true/false with existing i
     form.set("isAnonymous", isAnonymous);
     form.set("optionImages[0]", new File([Buffer.from("fixture")], "fixture.png", { type: "image/png" }));
     const json = await responseJson(await list.POST(request("POST", form)), 200);
-    const call = calls.filter((row) => row.rpc === "create_owned_poll_with_author").at(-1);
+    const call = calls.filter((row) => row.rpc === "create_poll_with_management").at(-1);
     assert.equal(call.payload.p_author_user_id, AUTH_USER_ID);
     assert.equal(call.payload.p_is_anonymous, isAnonymous === "true");
     assert.deepEqual(call.payload.p_option_image_paths, [NEW_PATH, null]);
@@ -1503,7 +1569,7 @@ test("poll anonymous validation rejects nonbooleans and invalid multipart values
     form.set("isAnonymous", value);
     await responseJson(await list.POST(request("POST", form)), 400);
   }
-  assert.equal(calls.filter((call) => call.rpc === "create_owned_poll_with_author").length, 0);
+  assert.equal(calls.filter((call) => call.rpc === "create_poll_with_management").length, 0);
 });
 
 test("home and poll detail serialize no author account IDs for named or anonymous polls", async () => {

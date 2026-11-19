@@ -397,7 +397,7 @@ export default function CreatePollPage() {
 
       const response = await fetch('/api/polls', requestInit);
       const json = (await response.json()) as {
-        data?: { id?: string; ownerToken?: string };
+        data?: { id?: string; ownerToken?: string; accountManaged?: boolean };
         error?: string;
       };
 
@@ -417,7 +417,8 @@ export default function CreatePollPage() {
 
       const createdPollId = json.data?.id;
       const ownerToken = json.data?.ownerToken;
-      if (!createdPollId || !ownerToken) {
+      const accountManaged = json.data?.accountManaged === true;
+      if (!createdPollId || (!accountManaged && !ownerToken)) {
         setErrorMessage('투표 관리 권한 정보를 확인하지 못했습니다. 관리자에게 문의해주세요.');
         return;
       }
@@ -429,12 +430,14 @@ export default function CreatePollPage() {
         image_count: options.reduce((count, option) => count + (option.imageFile ? 1 : 0), 0),
       });
 
-      try {
-        storePollOwnerToken(createdPollId, ownerToken);
-      } catch {
-        setOwnerTokenFallback({ pollId: createdPollId, ownerToken });
-        setErrorMessage('이 브라우저에 수정·삭제 권한을 저장하지 못했습니다.');
-        return;
+      if (!accountManaged && ownerToken) {
+        try {
+          storePollOwnerToken(createdPollId, ownerToken);
+        } catch {
+          setOwnerTokenFallback({ pollId: createdPollId, ownerToken });
+          setErrorMessage('이 브라우저에 수정·삭제 권한을 저장하지 못했습니다.');
+          return;
+        }
       }
 
       releaseAllPreviewUrls();

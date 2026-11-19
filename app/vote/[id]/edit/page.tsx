@@ -6,6 +6,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { AuthButton } from '@/components/auth-button';
+import { useAuth } from '@/components/auth-provider';
 import { BrandHomeLink } from '@/components/brand-home-link';
 import { getPollOptionImagePublicUrl, normalizeOptionImagePaths } from '@/lib/poll-option-image-paths';
 import { getStoredPollOwnerToken, removeStoredPollOwnerToken } from '@/lib/poll-owner-storage';
@@ -31,6 +32,12 @@ type OptionDraft = {
 type Feedback = {
   type: 'error' | 'info' | 'success';
   message: string;
+};
+
+type EditAccess = {
+  context: string;
+  ownerToken: string | null;
+  canManageByAccount: boolean;
 };
 
 const CATEGORY_OPTIONS: Array<{ value: PollCategory; label: string; description: string }> = [
@@ -95,6 +102,8 @@ function getLockReasonLabel(reason: PollStructuralEditLockReason | null) {
 export default function EditPollPage({ params }: { params: Promise<EditPageParams> }) {
   const { id } = use(params);
   const router = useRouter();
+  const { user, loading: authLoading, openLogin } = useAuth();
+  const editContext = `${id}:${user?.id ?? 'guest'}`;
   const nextOptionKeyRef = useRef(0);
   const optionsRef = useRef<OptionDraft[]>([]);
   const imageInputRefs = useRef(new Map<number, HTMLInputElement>());
@@ -103,7 +112,10 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   const resetConfirmButtonRef = useRef<HTMLButtonElement | null>(null);
   const mutationInFlightRef = useRef(false);
 
-  const [ownerToken, setOwnerToken] = useState<string | null | undefined>(undefined);
+  const [editAccess, setEditAccess] = useState<EditAccess | null>(null);
+  const access = !authLoading && editAccess?.context === editContext ? editAccess : null;
+  const ownerToken = access?.canManageByAccount ? null : access?.ownerToken;
+  const canManagePoll = Boolean(ownerToken || access?.canManageByAccount);
   const [poll, setPoll] = useState<DbPoll | null>(null);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<PollCategory>('커뮤니티');
@@ -113,7 +125,6 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   const [activeImageOptionKey, setActiveImageOptionKey] = useState<number | null>(null);
   const [imagesChanged, setImagesChanged] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
@@ -180,21 +191,21 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   }, []);
 
   useEffect(() => {
-    let token: string | null = null;
+    if (authLoading) return;
+    setEditAccess(null);
+    setPoll(null);
+    setFeedback(null);
+    setShowDeleteConfirmation(false);
+    setShowResetConfirmation(false);
+    let storedOwnerToken: string | null = null;
     try {
-      token = getStoredPollOwnerToken(id);
+      storedOwnerToken = getStoredPollOwnerToken(id);
     } catch {
-      token = null;
+      // Account-managed polls can still be edited without browser storage.
     }
-    setOwnerToken(token);
-
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
-
     const controller = new AbortController();
     const loadPoll = async () => {
+      let canManageByAccount = false;
       try {
         const response = await fetch(`/api/polls/${encodeURIComponent(id)}`, {
           cache: 'no-store',
@@ -203,12 +214,16 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
         const json = (await response.json()) as {
           poll?: DbPoll | null;
           comments?: CommentRow[];
+          canManageByAccount?: boolean;
         };
+        if (controller.signal.aborted) return;
 
         if (!response.ok || !json.poll) {
           setFeedback({ type: 'error', message: response.status === 404 ? '삭제되었거나 존재하지 않는 투표예요.' : '투표 정보를 불러오지 못했습니다.' });
           return;
         }
+        canManageByAccount = json.canManageByAccount === true;
+        if (!storedOwnerToken && !canManageByAccount) return;
 
         const loadedPoll = json.poll;
         const imagePaths = normalizeOptionImagePaths(loadedPoll.option_image_paths, loadedPoll.options.length)
@@ -226,7 +241,13 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
         });
 
         nextOptionKeyRef.current = drafts.length;
+        for (const option of optionsRef.current) {
+          if (option.previewUrl) URL.revokeObjectURL(option.previewUrl);
+        }
         optionsRef.current = drafts;
+        activeImageOptionKeyRef.current = null;
+        setActiveImageOptionKey(null);
+        setImagesChanged(false);
         setOptions(drafts);
         setPoll(loadedPoll);
         setTitle(loadedPoll.title);
@@ -234,16 +255,16 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
         setDescription(loadedPoll.official_fact ?? '');
         setCommentCount(json.comments?.length ?? 0);
       } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') return;
+        if (controller.signal.aborted || (error instanceof Error && error.name === 'AbortError')) return;
         setFeedback({ type: 'error', message: '네트워크 오류로 투표 정보를 불러오지 못했습니다.' });
       } finally {
-        if (!controller.signal.aborted) setIsLoading(false);
+        if (!controller.signal.aborted) setEditAccess({ context: editContext, ownerToken: storedOwnerToken, canManageByAccount });
       }
     };
 
     void loadPoll();
     return () => controller.abort();
-  }, [id]);
+  }, [authLoading, editContext, id]);
 
   useEffect(() => {
     return () => {
@@ -423,7 +444,7 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   };
 
   const saveChanges = async (resetConfirmed = false) => {
-    if (!ownerToken || !poll || mutationInFlightRef.current) return;
+    if (!canManagePoll || !poll || mutationInFlightRef.current) return;
     if (validationMessage) {
       setFeedback({ type: 'error', message: validationMessage });
       return;
@@ -478,10 +499,11 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
         };
       }
 
-      requestInit.headers = {
-        ...requestInit.headers,
-        'X-Poll-Owner-Token': ownerToken,
-      };
+      if (ownerToken) {
+        const headers = new Headers(requestInit.headers);
+        headers.set('X-Poll-Owner-Token', ownerToken);
+        requestInit.headers = headers;
+      }
       const response = await fetch(`/api/polls/${encodeURIComponent(id)}`, requestInit);
       const responseBody = await response.json().catch(() => null) as {
         structural_edit_lock_reason?: unknown;
@@ -520,14 +542,14 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
   };
 
   const handleDelete = async () => {
-    if (!ownerToken || mutationInFlightRef.current) return;
+    if (!canManagePoll || mutationInFlightRef.current) return;
     mutationInFlightRef.current = true;
     setIsDeleting(true);
     setFeedback(null);
     try {
       const response = await fetch(`/api/polls/${encodeURIComponent(id)}`, {
         method: 'DELETE',
-        headers: { 'X-Poll-Owner-Token': ownerToken },
+        headers: ownerToken ? { 'X-Poll-Owner-Token': ownerToken } : undefined,
       });
       if (!response.ok) {
         setFeedback({ type: 'error', message: getMutationErrorMessage(response.status) });
@@ -549,7 +571,7 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
     }
   };
 
-  if (isLoading || ownerToken === undefined) {
+  if (!access) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-slate-900 dark:bg-[#020617] dark:text-white">
         <p className="font-bold text-slate-500">투표 관리 정보를 불러오는 중...</p>
@@ -557,16 +579,19 @@ export default function EditPollPage({ params }: { params: Promise<EditPageParam
     );
   }
 
-  if (!ownerToken) {
+  if (!canManagePoll && !feedback) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-20 text-slate-900 dark:bg-[#020617] dark:text-white">
         <section className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 text-center shadow-xl shadow-slate-950/[0.04] dark:border-white/10 dark:bg-white/[0.035] sm:p-8">
           <span aria-hidden="true" className="text-4xl">🔐</span>
           <h1 className="mt-4 text-2xl font-black">관리 권한이 없어요</h1>
           <p className="mt-3 break-keep text-sm font-semibold leading-relaxed text-slate-500 dark:text-slate-300">
-            이 브라우저에 이 투표의 관리 권한이 없습니다. 브라우저 데이터가 삭제되었거나 다른 기기라면 로그인 없는 관리 권한은 복구할 수 없어요.
+            일반 투표는 관리 권한이 저장된 브라우저에서 수정할 수 있어요. 공식 계정으로 발행한 투표는 작성한 계정으로 로그인해 주세요.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+            {!user ? (
+              <button type="button" onClick={() => openLogin('공식 투표를 작성한 계정으로 로그인해 주세요.', `/vote/${encodeURIComponent(id)}/edit`)} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold transition hover:border-blue-500 hover:text-blue-600 dark:border-white/15">로그인</button>
+            ) : null}
             <Link href={`/vote/${encodeURIComponent(id)}`} className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-500">투표로 돌아가기</Link>
             <Link href="/" className="inline-flex min-h-11 flex-1 items-center justify-center rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold transition hover:border-blue-500 hover:text-blue-600 dark:border-white/15">홈으로</Link>
           </div>

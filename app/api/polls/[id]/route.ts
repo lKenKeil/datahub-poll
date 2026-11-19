@@ -13,9 +13,8 @@ import {
 import { getPollVoteActor, withVoteActorCookie } from '@/lib/poll-vote-identity';
 import { parseCommentSort, sortComments } from '@/lib/comment-sorting';
 import { ASKIO_OFFICIAL_ACCOUNT } from "@/lib/brand";
-import { getOfficialAccountUserId } from "@/lib/official-account-server";
 import type { PollCategory, PublicPollAuthor } from "@/lib/types";
-import { authorizePollOwner } from "@/lib/poll-owner-auth";
+import { authorizePollOwner, readOfficialPublisher } from "@/lib/poll-owner-auth";
 import {
   parsePollOwnerPatchRequest,
   PollOwnerPatchRequestError,
@@ -263,14 +262,13 @@ export async function GET(request: Request, context: Context) {
     }
 
     const visibleById = new Map(visibleComments.map((comment) => [String(comment.id), comment]));
-    const officialAccountId = getOfficialAccountUserId();
     const publicPollAuthorId = availability.is_anonymous === false && typeof availability.author_user_id === "string"
       ? availability.author_user_id : null;
     const publicAuthorIds = new Set((commentAuthors ?? [])
       .filter((author) => author.is_anonymous !== true && typeof author.user_id === "string"
         && visibleById.has(String(author.id)))
       .map((author) => String(author.user_id)));
-    if (publicPollAuthorId && publicPollAuthorId !== officialAccountId) publicAuthorIds.add(publicPollAuthorId);
+    if (publicPollAuthorId) publicAuthorIds.add(publicPollAuthorId);
     const authorProfiles = new Map<string, PublicProfileIdentity>();
     if (publicAuthorIds.size > 0) {
       const { data: profiles, error: profilesError } = await supabaseMutation
@@ -286,18 +284,31 @@ export async function GET(request: Request, context: Context) {
     // Privileged comment reads
     // contain only identifiers, internal authorship and visibility, never
     // hidden original content. No account identifier leaves this handler.
-    const [{ data: currentPoll, error: currentPollError }, { data: commentStates, error: commentStatesError }] = await Promise.all([
+    const [
+      { data: currentPoll, error: currentPollError },
+      { data: commentStates, error: commentStatesError },
+      { data: ownership, error: ownershipError },
+      { data: publisher, error: publisherError },
+    ] = await Promise.all([
       supabaseMutation.from("polls").select(POLL_VISIBILITY_AND_AUTHOR_COLUMNS).eq("id", id).maybeSingle(),
       supabaseMutation.from("comments").select("id,poll_id,parent_id,is_hidden,user_id,is_anonymous")
         .eq("poll_id", id).order("created_at", { ascending: false }),
+      supabaseMutation.from("poll_ownership").select("owner_token_hash").eq("poll_id", id).maybeSingle(),
+      actor.userId && actor.userId === availability.author_user_id
+        ? readOfficialPublisher(supabaseMutation, actor.userId) : { data: null, error: null },
     ]);
     if (currentPollError) throw currentPollError;
     if (commentStatesError) throw commentStatesError;
     if (!currentPoll || currentPoll.is_hidden) return unavailable();
+    if (ownershipError) throw ownershipError;
+    if (publisherError) throw publisherError;
 
+    const accountManaged = ownership?.owner_token_hash === null;
+    const canManageByAccount = accountManaged && publisher?.active === true
+      && actor.userId === currentPoll.author_user_id;
     let pollAuthor: PublicPollAuthor | null = null;
     if (publicPollAuthorId && currentPoll.is_anonymous === false && currentPoll.author_user_id === publicPollAuthorId) {
-      if (publicPollAuthorId === officialAccountId) {
+      if (accountManaged) {
         pollAuthor = { name: ASKIO_OFFICIAL_ACCOUNT.name, isOfficial: true };
       } else {
         const profile = authorProfiles.get(publicPollAuthorId);
@@ -333,7 +344,7 @@ export async function GET(request: Request, context: Context) {
         author: pollAuthor,
       },
       comments: sortComments(enriched as Array<Record<string, unknown> & { id: unknown }>, parseCommentSort(new URL(request.url).searchParams.get('comments'))), viewerVote,
-      viewerIdentityStatus: getPollVoteIdentityStatus(actor), reportable: true,
+      viewerIdentityStatus: getPollVoteIdentityStatus(actor), reportable: true, canManageByAccount,
     }, { headers }));
   } catch (error) {
     if (isAccountVotingMigrationMissing(error)) return accountVotingMigrationResponse();

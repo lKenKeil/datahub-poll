@@ -89,6 +89,7 @@ type CommentView = CommentRow & {
 type PollDetailResponse = {
   poll?: PollDetail | null;
   comments?: CommentView[];
+  canManageByAccount?: boolean;
   viewerVote?: ViewerVote | null;
   viewerIdentityStatus?: 'account' | 'guest' | 'unavailable';
   reportable?: boolean;
@@ -215,7 +216,8 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [recommendationPool, setRecommendationPool] = useState<DbPoll[]>([]);
   const [recentPollIds, setRecentPollIds] = useState<string[]>([]);
   const [isOfficial, setIsOfficial] = useState(false);
-  const [canManagePoll, setCanManagePoll] = useState(false);
+  const [hasOwnerToken, setHasOwnerToken] = useState(false);
+  const [canManageByAccount, setCanManageByAccount] = useState(false);
   const [loading, setLoading] = useState(true);
   const [userFingerprint, setUserFingerprint] = useState('');
   const [voterId, setVoterId] = useState('');
@@ -225,6 +227,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
   const [votePending, setVotePending] = useState(false);
   const voteContextKey = `${dbPollId}:${user?.id ?? 'guest'}`;
   const viewerReady = !authLoading && viewerContextKey === voteContextKey;
+  const canManagePoll = hasOwnerToken || (viewerReady && canManageByAccount);
   const voted = viewerReady && hasViewerVote;
   const voteControlsDisabled = !viewerReady || Boolean(voteIdentityError) || votePending;
   const currentVoteContextRef = useRef(voteContextKey);
@@ -272,6 +275,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
     voteInFlight.current = null;
     lastSnapshotRef.current = '';
     setViewerContextKey(null);
+    setCanManageByAccount(false);
     setVoteIdentityError('');
     setVotePending(false);
     setVoteCancelling(false);
@@ -304,14 +308,14 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
 
   useEffect(() => {
     if (officialPoll) {
-      setCanManagePoll(false);
+      setHasOwnerToken(false);
       return;
     }
 
     try {
-      setCanManagePoll(Boolean(getStoredPollOwnerToken(id)));
+      setHasOwnerToken(Boolean(getStoredPollOwnerToken(id)));
     } catch {
-      setCanManagePoll(false);
+      setHasOwnerToken(false);
     }
   }, [id, officialPoll]);
 
@@ -405,6 +409,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       const { response, json } = await viewerReadRef.current.promise;
       if (generation !== pollRequestGenerationRef.current) return;
       setViewerContextKey(voteContextKey);
+      setCanManageByAccount(response.ok && json.canManageByAccount === true);
 
       if (!response.ok) {
         setPollLoadError(response.status === 404
@@ -585,6 +590,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
       // public. Only an explicit successful response may enable its fallback.
       setPollData(null);
       setComments([]);
+      setCanManageByAccount(false);
       setReportable(false);
       setReportTarget(null);
       lastSnapshotRef.current = '';
