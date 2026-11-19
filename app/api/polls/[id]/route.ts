@@ -12,8 +12,9 @@ import {
 } from "@/lib/poll-vote-server";
 import { getPollVoteActor, withVoteActorCookie } from '@/lib/poll-vote-identity';
 import { parseCommentSort, sortComments } from '@/lib/comment-sorting';
-import type { PollCategory } from "@/lib/types";
-import { authorizePollOwner } from "@/lib/poll-owner-auth";
+import { ASKIO_OFFICIAL_ACCOUNT } from "@/lib/brand";
+import type { PollCategory, PublicPollAuthor } from "@/lib/types";
+import { authorizePollOwner, readOfficialPublisher } from "@/lib/poll-owner-auth";
 import {
   parsePollOwnerPatchRequest,
   PollOwnerPatchRequestError,
@@ -65,6 +66,7 @@ const OWNER_MUTATION_MIGRATION_MESSAGE =
 const STRUCTURAL_LOCK_REASONS = new Set([
   "first_vote", "time_expired", "participant_limit", "has_comments",
 ]);
+const POLL_VISIBILITY_AND_AUTHOR_COLUMNS = "id,is_hidden,author_user_id,is_anonymous";
 
 type MutablePollRow = {
   id: string;
@@ -196,7 +198,7 @@ export async function GET(request: Request, context: Context) {
     }
     const { data: availability, error: availabilityError } = await supabaseMutation
       .from("polls")
-      .select("id,is_hidden")
+      .select(POLL_VISIBILITY_AND_AUTHOR_COLUMNS)
       .eq("id", id)
       .maybeSingle();
     if (availabilityError) throw availabilityError;
@@ -260,14 +262,17 @@ export async function GET(request: Request, context: Context) {
     }
 
     const visibleById = new Map(visibleComments.map((comment) => [String(comment.id), comment]));
-    const publicAuthorIds = [...new Set((commentAuthors ?? [])
+    const publicPollAuthorId = availability.is_anonymous === false && typeof availability.author_user_id === "string"
+      ? availability.author_user_id : null;
+    const publicAuthorIds = new Set((commentAuthors ?? [])
       .filter((author) => author.is_anonymous !== true && typeof author.user_id === "string"
         && visibleById.has(String(author.id)))
-      .map((author) => String(author.user_id)))];
+      .map((author) => String(author.user_id)));
+    if (publicPollAuthorId) publicAuthorIds.add(publicPollAuthorId);
     const authorProfiles = new Map<string, PublicProfileIdentity>();
-    if (publicAuthorIds.length > 0) {
+    if (publicAuthorIds.size > 0) {
       const { data: profiles, error: profilesError } = await supabaseMutation
-        .from("profiles").select("id,nickname,avatar_url,show_avatar").in("id", publicAuthorIds);
+        .from("profiles").select("id,nickname,avatar_url,show_avatar").in("id", [...publicAuthorIds]);
       if (profilesError) throw profilesError;
       for (const profile of profiles ?? []) {
         if (typeof profile.nickname === "string") authorProfiles.set(String(profile.id), profile);
@@ -279,14 +284,37 @@ export async function GET(request: Request, context: Context) {
     // Privileged comment reads
     // contain only identifiers, internal authorship and visibility, never
     // hidden original content. No account identifier leaves this handler.
-    const [{ data: currentPoll, error: currentPollError }, { data: commentStates, error: commentStatesError }] = await Promise.all([
-      supabaseMutation.from("polls").select("id,is_hidden").eq("id", id).maybeSingle(),
+    const [
+      { data: currentPoll, error: currentPollError },
+      { data: commentStates, error: commentStatesError },
+      { data: ownership, error: ownershipError },
+      { data: publisher, error: publisherError },
+    ] = await Promise.all([
+      supabaseMutation.from("polls").select(POLL_VISIBILITY_AND_AUTHOR_COLUMNS).eq("id", id).maybeSingle(),
       supabaseMutation.from("comments").select("id,poll_id,parent_id,is_hidden,user_id,is_anonymous")
         .eq("poll_id", id).order("created_at", { ascending: false }),
+      supabaseMutation.from("poll_ownership").select("owner_token_hash").eq("poll_id", id).maybeSingle(),
+      actor.userId && actor.userId === availability.author_user_id
+        ? readOfficialPublisher(supabaseMutation, actor.userId) : { data: null, error: null },
     ]);
     if (currentPollError) throw currentPollError;
     if (commentStatesError) throw commentStatesError;
     if (!currentPoll || currentPoll.is_hidden) return unavailable();
+    if (ownershipError) throw ownershipError;
+    if (publisherError) throw publisherError;
+
+    const accountManaged = ownership?.owner_token_hash === null;
+    const canManageByAccount = accountManaged && publisher?.active === true
+      && actor.userId === currentPoll.author_user_id;
+    let pollAuthor: PublicPollAuthor | null = null;
+    if (publicPollAuthorId && currentPoll.is_anonymous === false && currentPoll.author_user_id === publicPollAuthorId) {
+      if (accountManaged) {
+        pollAuthor = { name: ASKIO_OFFICIAL_ACCOUNT.name, isOfficial: true };
+      } else {
+        const profile = authorProfiles.get(publicPollAuthorId);
+        if (profile) pollAuthor = { name: profile.nickname, isOfficial: false };
+      }
+    }
 
     const enriched = (commentStates ?? []).flatMap<Record<string, unknown>>((state) => {
       if (state.is_hidden) {
@@ -313,9 +341,10 @@ export async function GET(request: Request, context: Context) {
       poll: {
         ...serializePublicPoll(poll),
         ...getPollStructuralEditState(poll, (commentStates ?? []).length > 0, hasAnyVotes),
+        author: pollAuthor,
       },
       comments: sortComments(enriched as Array<Record<string, unknown> & { id: unknown }>, parseCommentSort(new URL(request.url).searchParams.get('comments'))), viewerVote,
-      viewerIdentityStatus: getPollVoteIdentityStatus(actor), reportable: true,
+      viewerIdentityStatus: getPollVoteIdentityStatus(actor), reportable: true, canManageByAccount,
     }, { headers }));
   } catch (error) {
     if (isAccountVotingMigrationMissing(error)) return accountVotingMigrationResponse();

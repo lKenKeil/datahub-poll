@@ -12,6 +12,8 @@ const compile = (file) => ts.transpileModule(readFileSync(new URL(file, import.m
 }).outputText;
 const pageCode = compile('../app/vote/[id]/page.tsx');
 const identityCode = compile('../lib/poll-vote-identity-request.ts');
+const brandModule = { exports: {} };
+new Function('module', 'exports', compile('../lib/brand.ts'))(brandModule, brandModule.exports);
 const original = Object.fromEntries(['fetch', 'window', 'localStorage', 'setInterval', 'clearInterval']
   .map(key => [key, { present: Object.hasOwn(globalThis, key), value: globalThis[key] }]));
 const tick = () => new Promise(setImmediate);
@@ -90,6 +92,7 @@ function harness(provider) {
     '@/lib/poll-discovery': { selectNextPolls: () => [] },
     '@/lib/poll-discovery-session': { rememberPollVisit: () => [] },
     '@/lib/analytics': { trackNextPollClicked() {}, trackPollViewed() {}, trackVoteResultViewed() {}, trackVoteSubmitted() {} },
+    '@/lib/brand': brandModule.exports,
     '@/lib/content-reporting': { HIDDEN_COMMENT_PLACEHOLDER: '숨겨진 의견' },
     '@/lib/comment-sorting': { COMMENT_SORTS: { likes: '인기순', latest: '최신순' },
       parseCommentSort: value => value === 'latest' ? 'latest' : 'likes', sortComments: value => value },

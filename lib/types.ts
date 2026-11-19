@@ -29,6 +29,8 @@ export type OfficialPoll = {
   officialFact: string;
 };
 
+export type PublicPollAuthor = { name: string; isOfficial: boolean };
+
 export type DbPoll = {
   id: string;
   title: string;

@@ -63,7 +63,8 @@ function isOwnershipMigrationMissing(error: unknown) {
   return (
     code === "PGRST202"
     || ((code === "42883" || code === "42P01")
-      && (message.includes("create_owned_poll") || message.includes("poll_ownership")))
+      && (message.includes("create_poll_with_management") || message.includes("create_owned_poll")
+        || message.includes("poll_ownership") || message.includes("official_poll_publishers")))
   );
 }
 
@@ -398,7 +399,7 @@ export async function POST(request: Request) {
       insertPayload.option_image_paths = optionImagePaths;
     }
 
-    const { error } = await supabaseMutation.rpc("create_owned_poll_with_author", {
+    const { data: accountManaged, error } = await supabaseMutation.rpc("create_poll_with_management", {
       p_poll_id: id,
       p_title: rawTitle,
       p_category: rawCategory,
@@ -422,6 +423,9 @@ export async function POST(request: Request) {
       if (cleanupError) {
         logPublicMutationError("poll-create-db-failure-cleanup", cleanupError);
       }
+      if (error.code === "42501" && error.message === "OFFICIAL_PUBLISHER_INACTIVE") {
+        return NextResponse.json({ error: "이 계정의 공식 발행 권한이 비활성화됐어요." }, { status: 403 });
+      }
       return NextResponse.json(
         {
           code: isOwnershipMigrationMissing(error) ? "POLL_OWNERSHIP_MIGRATION_REQUIRED" : undefined,
@@ -434,24 +438,19 @@ export async function POST(request: Request) {
     }
 
     pollInserted = true;
+    if (typeof accountManaged !== "boolean") {
+      throw new Error("Unexpected poll management response.");
+    }
     return NextResponse.json({
       ok: true,
-      data: uploadedPaths.length > 0
-        ? {
-          id,
-          ownerToken: ownerCredential.token,
-          option_image_paths: insertPayload.option_image_paths,
-          edit_lock_mode: editLock.mode,
-          edit_lock_minutes: editLock.minutes,
-          edit_lock_participants: editLock.participants,
-        }
-        : {
-          id,
-          ownerToken: ownerCredential.token,
-          edit_lock_mode: editLock.mode,
-          edit_lock_minutes: editLock.minutes,
-          edit_lock_participants: editLock.participants,
-        },
+      data: {
+        id,
+        ...(accountManaged ? { accountManaged: true } : { ownerToken: ownerCredential.token }),
+        ...(uploadedPaths.length > 0 ? { option_image_paths: insertPayload.option_image_paths } : {}),
+        edit_lock_mode: editLock.mode,
+        edit_lock_minutes: editLock.minutes,
+        edit_lock_participants: editLock.participants,
+      },
     }, {
       headers: { "Cache-Control": "no-store" },
     });

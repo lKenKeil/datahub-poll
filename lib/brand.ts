@@ -20,3 +20,8 @@ export const BRAND_SOCIAL_IMAGE = {
   height: 630,
   alt: `${BRAND.name} — ${BRAND.descriptor}`,
 } as const;
+
+export const ASKIO_OFFICIAL_ACCOUNT = {
+  name: 'ASKIO 공식',
+  bio: '일상의 궁금증을 함께 선택하고, 결과와 서로의 판단 이유를 나누는 ASKIO 공식 계정',
+} as const;
