@@ -1,6 +1,8 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { requireAuthenticatedUser } from "@/lib/auth-server";
+import { getOfficialAccountUserId } from "@/lib/official-account-server";
 import {
   isValidPollOwnerToken,
   verifyPollOwnerToken,
@@ -48,7 +50,29 @@ export async function authorizePollOwner(
       : { ok: false, status: 404, reason: "not_found" };
   }
 
-  return verifyPollOwnerToken(token, ownership.owner_token_hash)
-    ? { ok: true }
-    : { ok: false, status: 403, reason: "forbidden" };
+  if (!verifyPollOwnerToken(token, ownership.owner_token_hash)) {
+    return { ok: false, status: 403, reason: "forbidden" };
+  }
+
+  const officialAccountId = getOfficialAccountUserId();
+  if (officialAccountId) {
+    const { data: poll, error: pollError } = await supabase
+      .from("polls")
+      .select("author_user_id")
+      .eq("id", pollId)
+      .maybeSingle();
+    if (pollError) return { ok: false, status: 500, reason: "internal", error: pollError };
+    if (!poll) return { ok: false, status: 404, reason: "not_found" };
+
+    const { user, response } = await requireAuthenticatedUser(request);
+    const isOfficialPoll = poll.author_user_id === officialAccountId;
+    const isOfficialUser = user?.id === officialAccountId;
+    // The existing token is still required. A verified publisher session is
+    // bound to its own polls, even if another poll's token is supplied.
+    if (response?.status === 403 || isOfficialPoll !== isOfficialUser) {
+      return { ok: false, status: 403, reason: "forbidden" };
+    }
+  }
+
+  return { ok: true };
 }

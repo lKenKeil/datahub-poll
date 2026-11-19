@@ -8,11 +8,13 @@ import { AuthButton } from '@/components/auth-button';
 import { ProfileAvatar } from '@/components/profile-avatar';
 import { useAuth } from '@/components/auth-provider';
 import { BrandHomeLink } from '@/components/brand-home-link';
+import { BrandMark } from '@/components/brand-mark';
 import { ContentReportDialog, type ContentReportTarget } from '@/components/content-report-dialog';
 import { HIDDEN_COMMENT_PLACEHOLDER } from '@/lib/content-reporting';
 import { COMMENT_SORTS, parseCommentSort, sortComments, type CommentSort } from '@/lib/comment-sorting';
 import { POLLS } from '../../../data/polls';
-import { CommentRow, DbPoll } from '@/lib/types';
+import { ASKIO_OFFICIAL_ACCOUNT } from '@/lib/brand';
+import type { CommentRow, DbPoll, PublicPollAuthor } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
 import { getStoredLegacyVoterId } from '@/lib/voter-id';
 import { claimPollVoteIdentity, fetchPollVoteIdentity, isPollVoteIdentityReady } from '@/lib/poll-vote-identity-request';
@@ -42,11 +44,12 @@ type ViewPoll = {
   participants: number;
   officialFact?: string;
   optionImagePaths?: Array<string | null> | null;
+  author?: PublicPollAuthor | null;
 };
 
-type DbPollWithOfficialFact = DbPoll & {
-  official_fact?: string;
+type PollDetail = DbPoll & {
   officialFact?: string;
+  author?: PublicPollAuthor | null;
 };
 
 type IncrementVoteResponse = {
@@ -84,7 +87,7 @@ type CommentView = CommentRow & {
 };
 
 type PollDetailResponse = {
-  poll?: DbPoll | null;
+  poll?: PollDetail | null;
   comments?: CommentView[];
   viewerVote?: ViewerVote | null;
   viewerIdentityStatus?: 'account' | 'guest' | 'unavailable';
@@ -434,7 +437,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
         ? ''
         : '기존 투표를 확인하지 못했어요. 잠시 후 다시 확인해주세요.');
 
-      const dbPoll = json.poll as DbPollWithOfficialFact | null;
+      const dbPoll = json.poll;
       setReportable(Boolean(dbPoll) && json.reportable !== false);
       const dbComments = (json.comments ?? []).map((comment) => ({
         ...comment,
@@ -450,6 +453,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               id: dbPoll.id,
               votes: dbPoll.votes,
               participants: dbPoll.participants,
+              author: dbPoll.author,
             }
           : null,
         viewerVote: json.viewerVote ?? null,
@@ -493,6 +497,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           participants: mergedParticipants,
           officialFact: officialPoll.officialFact,
           optionImagePaths: null,
+          author: dbPoll?.author,
         });
         setBarWidths(calcPercentages(mergedVotes));
         analyticsCategory = officialPoll.category;
@@ -508,6 +513,7 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
           votes: safeVotes,
           participants: dbPoll.participants || 0,
           officialFact: dbPoll.officialFact ?? dbPoll.official_fact,
+          author: dbPoll.author,
           optionImagePaths: normalizeOptionImagePaths(
             dbPoll.option_image_paths,
             dbPoll.options.length,
@@ -1182,6 +1188,18 @@ export default function VotePage({ params }: { params: Promise<VotePageParams> }
               </span>
             </div>
             <h1 className="mt-4 break-words text-3xl font-black leading-tight tracking-[-0.035em] text-ink dark:text-ink sm:text-4xl">{pollData.title}</h1>
+            {pollData.author?.isOfficial ? (
+              <details className="mt-2 w-fit max-w-full text-sm text-muted">
+                <summary className="inline-flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-2 rounded-lg font-semibold text-ink [&::-webkit-details-marker]:hidden">
+                  <BrandMark className="size-6" />
+                  <span>{pollData.author.name}</span>
+                  <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs text-link">공식 운영 계정</span>
+                </summary>
+                <p className="max-w-md break-words rounded-xl border border-line bg-surface px-3 py-2">{ASKIO_OFFICIAL_ACCOUNT.bio}</p>
+              </details>
+            ) : pollData.author ? (
+              <p className="mt-2 break-words text-sm text-muted">작성자 {pollData.author.name}</p>
+            ) : null}
             <p className="mt-3 text-sm font-medium text-muted dark:text-muted sm:text-base">
               {isRevoting ? '기존 선택을 다른 선택지로 바꿔보세요.' : voted ? '내 선택과 전체 결과를 비교해보세요.' : '당신의 선택은 어느 쪽인가요? 하나를 고르면 바로 결과를 볼 수 있어요.'}
             </p>

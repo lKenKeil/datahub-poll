@@ -30,6 +30,7 @@ let nextVoteId = 1_000;
 const originalAdminKey = process.env.ADMIN_DASHBOARD_KEY;
 const originalGuestSecret = process.env.GUEST_ID_SECRET;
 const originalServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const originalOfficialAccountId = process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID;
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock-only-service-role-key-not-a-credential';
 process.env.GUEST_ID_SECRET = 'mock-only-guest-identity-key-not-a-credential';
 const originalConsoleError = console.error;
@@ -49,10 +50,12 @@ const NEW_PATH = `${POLL_ID}/options/0/77777777-7777-4777-8777-777777777777.webp
 const PRIVATE_TEXT = "hidden-original-must-not-leave-server";
 const RAW_ERROR = "raw-sql-constraint-secret-must-not-leave-server";
 const AUTH_USER_ID = "99999999-9999-4999-8999-999999999999";
+const OFFICIAL_ACCOUNT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const PROFILE_NICKNAME = "느긋한펭귄4821";
 const PROFILE_AVATAR = "https://avatar.example.invalid/public-profile.png";
 
 function reset() {
+  delete process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID;
   calls.length = 0;
   loggedErrors.length = 0;
   queryFailure = null;
@@ -537,9 +540,56 @@ test("deleted official detail and metadata cannot resurrect static content", asy
 });
 
 test("genuinely DB-less static official stays readable and non-reportable", async () => {
+  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID;
   const json = await responseJson(await detail.GET(request(), context("official_phone")), 200);
   assert.equal(json.poll, null);
   assert.equal(json.reportable, false);
+});
+
+test("guest detail shows the verified public poll author without exposing account IDs", async () => {
+  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID.toUpperCase();
+  authUser = null;
+  const poll = database.polls[0];
+  poll.author_user_id = OFFICIAL_ACCOUNT_ID;
+  poll.is_anonymous = false;
+  poll.votes = [2, 1];
+  poll.participants = 3;
+  for (let read = 0; read < 2; read += 1) {
+    const json = await responseJson(await detail.GET(request(), context()), 200);
+    assert.deepEqual(json.poll.author, { name: "ASKIO 공식", isOfficial: true });
+    assert.deepEqual(json.poll.votes, [2, 1]);
+    assert.equal(json.poll.participants, 3);
+    assert.ok(!JSON.stringify(json).includes(OFFICIAL_ACCOUNT_ID));
+  }
+  const publicList = await responseJson(await list.GET(), 200);
+  assert.ok(!Object.hasOwn(publicList.data[0], "author_user_id"));
+
+  poll.is_anonymous = true;
+  assert.equal((await responseJson(await detail.GET(request(), context()), 200)).poll.author, null);
+  poll.is_anonymous = false;
+  poll.author_user_id = AUTH_USER_ID;
+  const member = await responseJson(await detail.GET(request(), context()), 200);
+  assert.deepEqual(member.poll.author, { name: PROFILE_NICKNAME, isOfficial: false });
+  assert.ok(!JSON.stringify(member).includes(AUTH_USER_ID));
+
+  poll.author_user_id = null;
+  assert.equal((await responseJson(await detail.GET(request(), context()), 200)).poll.author, null);
+  poll.author_user_id = OFFICIAL_ACCOUNT_ID;
+  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = "not-a-uuid";
+  assert.equal((await responseJson(await detail.GET(request(), context()), 200)).poll.author, null);
+});
+
+test("poll author is withheld if the final visibility recheck sees anonymity change", async () => {
+  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID;
+  Object.assign(database.polls[0], { author_user_id: OFFICIAL_ACCOUNT_ID, is_anonymous: false });
+  queryHook = (query) => {
+    if (query.table === "polls" && query.role === "service"
+      && calls.filter((call) => call.role === "service" && call.table === "polls").length === 2) {
+      database.polls[0].is_anonymous = true;
+    }
+  };
+  const json = await responseJson(await detail.GET(request(), context()), 200);
+  assert.equal(json.poll.author, null);
 });
 
 test("hidden comment becomes a safe parent placeholder and still locks editing", async () => {
@@ -1046,6 +1096,46 @@ test("authenticated poll creation preserves owner RPC wrapper and zero initial v
   assert.equal(call.payload.p_is_anonymous, false);
   assert.ok(json.data.ownerToken);
   assert.equal(JSON.stringify(database.polls[0]), before);
+});
+
+test("forged official fields cannot change creation authorship or profile status", async () => {
+  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID;
+  const forged = { author_user_id: OFFICIAL_ACCOUNT_ID, isOfficial: true };
+  await responseJson(await list.POST(request("POST", { ...createBody, ...forged }, {}), context()), 200);
+  assert.equal(calls.find((entry) => entry.rpc === "create_owned_poll_with_author").payload.p_author_user_id, AUTH_USER_ID);
+  assert.equal(validateNickname("ASKIO 공식").ok, false);
+  await responseJson(await profileRoute.PATCH(request("PATCH", { showAvatar: false, isOfficial: true }), context()), 400);
+  assert.ok(!calls.some((entry) => entry.table === "profiles" && entry.update));
+});
+
+test("official poll owner mutations require its verified session and the existing owner token", async () => {
+  process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = OFFICIAL_ACCOUNT_ID;
+  const poll = database.polls[0];
+  poll.author_user_id = OFFICIAL_ACCOUNT_ID;
+  const token = { "x-poll-owner-token": OWNER_TOKEN };
+  const edit = { officialFact: "검증된 편집" };
+
+  for (const method of ["PATCH", "DELETE"]) {
+    await responseJson(await detail[method](request(method, method === "PATCH" ? edit : undefined, token), context()), 403);
+  }
+  authUser = null;
+  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 403);
+  authUser = { id: OFFICIAL_ACCOUNT_ID, is_anonymous: false };
+  await responseJson(await detail.DELETE(request("DELETE"), context()), 403);
+  await responseJson(await detail.PATCH(request("PATCH", edit, { ...token, origin: "https://other.invalid" }), context()), 403);
+  poll.author_user_id = AUTH_USER_ID;
+  for (const method of ["PATCH", "DELETE"]) {
+    await responseJson(await detail[method](request(method, method === "PATCH" ? edit : undefined, token), context()), 403);
+  }
+  assert.ok(!calls.some((entry) => entry.rpc));
+
+  authUser = null;
+  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 200);
+  poll.author_user_id = OFFICIAL_ACCOUNT_ID;
+  authUser = { id: OFFICIAL_ACCOUNT_ID, is_anonymous: false };
+  await responseJson(await detail.PATCH(request("PATCH", edit, token), context()), 200);
+  await responseJson(await detail.DELETE(request("DELETE", undefined, token), context()), 200);
+  assert.ok(calls.some((entry) => entry.rpc === "delete_poll_with_dependents"));
 });
 
 test("comment identity comes only from verified session and is not serialized publicly", async () => {
@@ -2464,6 +2554,8 @@ try {
   else process.env.GUEST_ID_SECRET = originalGuestSecret;
   if (originalServiceRoleKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   else process.env.SUPABASE_SERVICE_ROLE_KEY = originalServiceRoleKey;
+  if (originalOfficialAccountId === undefined) delete process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID;
+  else process.env.ASKIO_OFFICIAL_ACCOUNT_USER_ID = originalOfficialAccountId;
 }
 console.log(`${tests.length - failed}/${tests.length} mocked API regression checks passed. No live DB mutations were performed.`);
 if (failed) process.exitCode = 1;
